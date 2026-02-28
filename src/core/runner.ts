@@ -1,13 +1,12 @@
 import { type IWorkflowRunner, type RunResult, type RunOptions } from "./types.js";
 
-type SpawnFn = (
-  cmd: string[],
-  options: Bun.SpawnOptions.SpawnOptions<
-    Bun.SpawnOptions.Writable,
-    Bun.SpawnOptions.Readable,
-    Bun.SpawnOptions.Readable
-  >,
-) => SubprocessLike;
+type SpawnOptions = {
+  cwd?: string;
+  stdout: "pipe";
+  stderr: "pipe";
+};
+
+type SpawnFn = (cmd: string[], options: SpawnOptions) => SubprocessLike;
 
 interface SubprocessLike {
   stdout: unknown;
@@ -179,7 +178,9 @@ export class WorkflowRunner implements IWorkflowRunner {
     this.defaultTimeout = config.timeout;
 
     this.deps = {
-      spawn: deps.spawn ?? ((cmd, options) => Bun.spawn(cmd, options)),
+      spawn:
+        deps.spawn ??
+        ((cmd, options) => Bun.spawn(cmd, options) as unknown as SubprocessLike),
       signals: deps.signals ?? process,
       now: deps.now ?? (() => Date.now()),
       setTimeout: deps.setTimeout ?? globalThis.setTimeout,

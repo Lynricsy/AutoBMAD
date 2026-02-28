@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { WorkflowRunner, MockWorkflowRunner } from "../../src/core/runner.js";
+import { WorkflowRunner, MockWorkflowRunner, buildOhMyOpenCodeRunCommand } from "../../src/core/runner.js";
 import { AgentType, type RunOptions, type RunResult } from "../../src/core/types.js";
 
 function streamFromText(text: string): ReadableStream<Uint8Array> {
@@ -74,7 +74,94 @@ function makeKillControlledProc(params: {
   return { proc, killCalls };
 }
 
+describe("buildOhMyOpenCodeRunCommand", () => {
+  test("basic command construction (agent + message)", () => {
+    const options: RunOptions = {
+      message: "hello",
+      agent: AgentType.Sisyphus,
+      directory: "",
+    };
+
+    expect(buildOhMyOpenCodeRunCommand(options)).toEqual([
+      "oh-my-opencode",
+      "run",
+      "--agent",
+      "sisyphus",
+      "--json",
+      "hello",
+    ]);
+  });
+
+  test("includes directory flag when directory is provided", () => {
+    const options: RunOptions = {
+      message: "hello",
+      agent: AgentType.Hephaestus,
+      directory: "/tmp/project",
+    };
+
+    expect(buildOhMyOpenCodeRunCommand(options)).toEqual([
+      "oh-my-opencode",
+      "run",
+      "--agent",
+      "hephaestus",
+      "--directory",
+      "/tmp/project",
+      "--json",
+      "hello",
+    ]);
+  });
+
+  test("omits directory flag when directory is empty", () => {
+    const options: RunOptions = {
+      message: "m",
+      agent: AgentType.Hephaestus,
+      directory: "",
+    };
+
+    const cmd = buildOhMyOpenCodeRunCommand(options);
+    expect(cmd.includes("--directory")).toBe(false);
+  });
+
+  test("places --json immediately before message", () => {
+    const options: RunOptions = {
+      message: "the message",
+      agent: AgentType.Sisyphus,
+      directory: "/tmp/project",
+    };
+
+    const cmd = buildOhMyOpenCodeRunCommand(options);
+    const jsonIdx = cmd.indexOf("--json");
+    expect(jsonIdx).toBeGreaterThanOrEqual(0);
+    expect(cmd[jsonIdx + 1]).toBe(options.message);
+  });
+});
+
 describe("WorkflowRunner", () => {
+  test("spawn throwing returns a failed RunResult", async () => {
+    const { signals, onCalls, removeCalls } = makeSignalsSpy();
+    const runner = new WorkflowRunner(
+      { timeout: 1_000 },
+      {
+        signals,
+        spawn() {
+          throw new Error("spawn boom");
+        },
+      },
+    );
+
+    const result = await runner.run({
+      message: "m",
+      agent: AgentType.Sisyphus,
+      directory: "/tmp/x",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toContain("Failed to spawn process");
+    expect(result.summary).toContain("spawn boom");
+    expect(onCalls).toHaveLength(0);
+    expect(removeCalls).toHaveLength(0);
+  });
+
   test("builds correct command array and spawn options", async () => {
     let capturedCmd: string[] | undefined;
     let capturedCwd: string | undefined;
@@ -191,6 +278,33 @@ describe("WorkflowRunner", () => {
     expect(result.summary).toContain("not json");
   });
 
+  test("empty stdout returns success=false", async () => {
+    const { signals } = makeSignalsSpy();
+    const runner = new WorkflowRunner(
+      { timeout: 1_000 },
+      {
+        signals,
+        spawn() {
+          return makeImmediateProc({
+            exitCode: 0,
+            stdoutText: "",
+            stderrText: "",
+          });
+        },
+      },
+    );
+
+    const result = await runner.run({
+      message: "m",
+      agent: AgentType.Sisyphus,
+      directory: "/tmp/x",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toContain("Failed to parse JSON output");
+    expect(result.summary).toContain("Empty stdout");
+  });
+
   test("non-zero exit code returns success=false and includes stderr", async () => {
     const { signals } = makeSignalsSpy();
     const runner = new WorkflowRunner(
@@ -244,7 +358,7 @@ describe("WorkflowRunner", () => {
       message: "m",
       agent: AgentType.Sisyphus,
       directory: "/tmp/x",
-      timeout: 5,
+      timeout: 50,
     });
 
     expect(result.success).toBe(false);
