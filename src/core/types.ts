@@ -29,28 +29,14 @@ export enum AgentType {
   Hephaestus = "hephaestus",
 }
 
-// Sprint 状态 YAML 数据结构
+// Sprint 状态 YAML 数据结构（匹配真实 sprint-status.yaml 格式）
 export interface SprintStatusData {
-  sprint: {
-    id: string;
-    goal: string;
-    status: string;
-  };
-  epics: Record<
-    string,
-    {
-      title: string;
-      status: EpicStatus;
-      stories: Record<
-        string,
-        {
-          title: string;
-          status: StoryStatus;
-          tasks?: string[];
-        }
-      >;
-    }
-  >;
+  generated: string;
+  project: string;
+  project_key: string;
+  tracking_system: string;
+  story_location: string;
+  development_status: Record<string, string>;
 }
 
 // 路由器生命周期步骤
