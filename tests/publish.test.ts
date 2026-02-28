@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeAll } from "bun:test";
-import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
 type PackageJson = {
@@ -112,8 +111,8 @@ describe("build output", () => {
   });
 
   test("dist/cli.js is executable", async () => {
-    const mode = (await stat(distCliPath)).mode;
-    expect(mode & 0o111).not.toBe(0);
+    const result = await Bun.$`test -x ${distCliPath}`.nothrow();
+    expect(result.exitCode).toBe(0);
   });
 });
 

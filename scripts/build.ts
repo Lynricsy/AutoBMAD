@@ -1,6 +1,6 @@
-import { mkdir } from "node:fs/promises";
+export {};
 
-await mkdir("./dist", { recursive: true });
+await Bun.$`mkdir -p ./dist`;
 
 const result = await Bun.build({
   entrypoints: ["./src/cli/index.ts"],
