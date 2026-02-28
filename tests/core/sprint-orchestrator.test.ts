@@ -278,35 +278,6 @@ describe("SprintOrchestrator", () => {
   const story2 = "0-2-story-2";
   const story3 = "0-3-story-3";
 
-  test("DEBUG: class prototype chain check", () => {
-    const { repo, setStatus } = makeInMemoryStateRepo([
-      { storyKey: story1, status: StoryStatus.Backlog },
-    ]);
-    const { store: runState } = makeRunStateStore();
-    const { runner } = makeDynamicRunner({ storyKeys: [story1], setStatus });
-
-    const orchestrator = new SprintOrchestrator(
-      repo,
-      runner,
-      runState,
-      new StubLogger(),
-      makeConfig(),
-    );
-
-    console.log("=== CI DEBUG ===");
-    console.log("typeof orchestrator:", typeof orchestrator);
-    console.log("constructor name:", orchestrator.constructor.name);
-    console.log("own keys:", Object.getOwnPropertyNames(orchestrator));
-    console.log("proto keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(orchestrator)));
-    console.log("runSprint type:", typeof orchestrator.runSprint);
-    console.log("resumeSprint type:", typeof orchestrator.resumeSprint);
-    console.log("proto === SprintOrchestrator.prototype:", Object.getPrototypeOf(orchestrator) === SprintOrchestrator.prototype);
-    console.log("=== END DEBUG ===");
-
-    expect(typeof orchestrator.runSprint).toBe("function");
-    expect(typeof orchestrator.resumeSprint).toBe("function");
-  });
-
   test("Full sprint completion: 3 backlog stories -> all done", async () => {
     const { repo, setStatus } = makeInMemoryStateRepo([
       { storyKey: story1, status: StoryStatus.Backlog },

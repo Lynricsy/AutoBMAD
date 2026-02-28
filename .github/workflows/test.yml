@@ -23,15 +23,6 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Debug SprintOrchestrator
-        run: |
-          bun -e "
-            import { SprintOrchestrator } from './src/core/sprint-orchestrator.js';
-            console.log('typeof SprintOrchestrator:', typeof SprintOrchestrator);
-            console.log('prototype keys:', Object.getOwnPropertyNames(SprintOrchestrator.prototype));
-            console.log('runSprint exists:', typeof SprintOrchestrator.prototype.runSprint);
-          "
-
       - name: Test
         run: bun test
 

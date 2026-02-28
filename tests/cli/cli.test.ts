@@ -10,7 +10,15 @@ const MODULES = {
   orchestrator: import.meta.resolve("../../src/core/sprint-orchestrator.js"),
 } as const;
 
-afterEach(() => {
+afterEach(async () => {
+  // mock.restore() does NOT reset mock.module() overrides (Bun documented behavior).
+  // Explicitly restore all mocked modules to prevent cross-file leakage in CI.
+  await mock.module(MODULES.config, () => import("../../src/core/config.js"));
+  await mock.module(MODULES.logger, () => import("../../src/core/logger.js"));
+  await mock.module(MODULES.stateManager, () => import("../../src/core/state-manager.js"));
+  await mock.module(MODULES.runState, () => import("../../src/core/run-state.js"));
+  await mock.module(MODULES.runner, () => import("../../src/core/runner.js"));
+  await mock.module(MODULES.orchestrator, () => import("../../src/core/sprint-orchestrator.js"));
   mock.restore();
   process.exitCode = undefined;
 });
