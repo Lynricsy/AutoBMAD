@@ -1,0 +1,7 @@
+AgentLogs/
+node_modules/
+dist/
+.autobmad-state.json
+*.tmp
+.autobmad-logs/
+.sisyphus/
