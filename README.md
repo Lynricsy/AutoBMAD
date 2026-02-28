@@ -14,33 +14,45 @@
 - 🎨 **美观终端仪表盘** — Unicode 方框绘制 + ANSI 彩色输出，清晰掌握进度
 - ⚡ **基于 Bun** — 极速启动，TypeScript 原生支持，零编译等待
 - 🔧 **可配置** — CLI 参数 / `.autobmad.yaml` / 自定义 Prompt，灵活适配你的项目
-- 🧪 **完善测试** — 200 个测试用例，100% 通过
+- 🧪 **完善测试** — 200+ 个测试用例，100% 通过
 
 ## 📦 安装
+
+### 全局安装（推荐）
+
+```bash
+bun add -g auto-bmad
+```
+
+安装后即可在任何目录使用 `autobmad` 命令。
+
+### 从源码安装
 
 ```bash
 git clone https://github.com/Lynricsy/AutoBMAD.git
 cd AutoBMAD
 bun install
+bun run build
+bun link
 ```
 
 ## 🚀 快速开始
 
 ```bash
 # 开始新 Sprint（自动执行规划 → 创建 Story → 开发 → 审查）
-bun run start -- start --dir /path/to/your/bmad-project
+autobmad start --dir /path/to/your/bmad-project
 
 # 查看当前 Sprint 状态
-bun run start -- status --dir /path/to/project
+autobmad status --dir /path/to/project
 
 # 中断后恢复执行
-bun run start -- resume --dir /path/to/project
+autobmad resume --dir /path/to/project
 
 # 重置本地运行状态
-bun run start -- reset --dir /path/to/project
+autobmad reset --dir /path/to/project
 ```
 
-也可以直接运行 CLI 入口：
+如果从源码安装，也可以直接运行：
 
 ```bash
 bun run src/cli/index.ts start --dir /path/to/project
@@ -126,7 +138,7 @@ bun test
 bun run typecheck
 ```
 
-项目包含 200 个测试用例，覆盖核心模块的所有关键路径。
+项目包含 200+ 个测试用例，覆盖核心模块的所有关键路径。
 
 ## 📋 前提条件
 
@@ -143,6 +155,22 @@ bun run typecheck
 | 运行时依赖 | `yaml` ^2.7.0（仅此一个） |
 | 测试 | `bun test` |
 | 状态存储 | YAML + JSON 文件系统 |
+
+## 📤 发布
+
+本项目通过 GitHub Actions 自动发布到 npm。
+
+### 发布新版本
+
+```bash
+# 更新版本号（patch/minor/major）
+npm version patch
+
+# 推送 tag 触发自动发布
+git push --follow-tags
+```
+
+发布需要在 GitHub 仓库设置中配置 `NPM_TOKEN` Secret。
 
 ## 📄 License
 
