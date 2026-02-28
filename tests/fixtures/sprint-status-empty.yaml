@@ -1,0 +1,7 @@
+generated: "2025-01-01T00:00:00Z"
+project: "test-project"
+project_key: "TP"
+tracking_system: "file-based"
+story_location: "_bmad-output/stories"
+development_status:
+  epic-0: in-progress
