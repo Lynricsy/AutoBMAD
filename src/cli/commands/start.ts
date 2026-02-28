@@ -31,7 +31,17 @@ function mapSprintExitCode(status: "complete" | "paused" | "failed"): number {
   }
 }
 
+function checkOpencodeDependency(): void {
+  const found = Bun.which("opencode");
+  if (!found) {
+    process.stderr.write(
+      `[autobmad] ⚠️  Warning: 'opencode' (oh-my-opencode) not found in PATH. AutoBMAD requires oh-my-opencode to run sprint workflows. Install: https://github.com/anthropics/opencode\n`,
+    );
+  }
+}
+
 export async function startCommand(): Promise<void> {
+  checkOpencodeDependency();
   const argv = process.argv;
   parseDir(argv);
   hasFlag(argv, "--verbose", "-v");
