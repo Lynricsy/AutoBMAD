@@ -1,15 +1,43 @@
 {
-  "name": "autobmad",
+  "name": "auto-bmad",
   "version": "0.1.0",
+  "description": "Automated BMAD sprint orchestration CLI — from planning to dev, adversarial code review, and fix loops, fully unattended",
   "type": "module",
   "bin": {
-    "autobmad": "./src/cli/index.ts"
+    "autobmad": "./dist/cli.js"
   },
   "scripts": {
-    "build": "bun build src/cli/index.ts --outdir dist --target bun",
+    "build": "bun run scripts/build.ts",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
-    "start": "bun run src/cli/index.ts"
+    "start": "bun run src/cli/index.ts",
+    "prepublishOnly": "bun run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "bmad",
+    "scrum",
+    "sprint",
+    "automation",
+    "cli",
+    "bun",
+    "agile",
+    "opencode"
+  ],
+  "author": "Lynricsy <im@ling.plus>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lynricsy/AutoBMAD.git"
+  },
+  "homepage": "https://github.com/Lynricsy/AutoBMAD#readme",
+  "bugs": {
+    "url": "https://github.com/Lynricsy/AutoBMAD/issues"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "dependencies": {
     "yaml": "^2.7.0"
