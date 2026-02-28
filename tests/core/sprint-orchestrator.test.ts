@@ -113,13 +113,16 @@ function makeInMemoryStateRepo(initial: Array<{ storyKey: string; status: StoryS
       return new Map(statuses);
     },
 
-    async isSprintComplete(): Promise<boolean> {
+     async isSprintComplete(): Promise<boolean> {
+      // 约定：需要人工介入的故事在编排层视为“终态”，不会阻塞 Sprint 结束。
       for (const st of statuses.values()) {
-        if (st !== StoryStatus.Done) return false;
+        if (st === StoryStatus.Done) continue;
+        if (st === StoryStatus.NeedsHumanIntervention) continue;
+        return false;
       }
       return true;
-    },
-  };
+     },
+   };
 
   const setStatus = (storyKey: string, status: StoryStatus): void => {
     statuses.set(storyKey, status);
@@ -382,7 +385,7 @@ describe("SprintOrchestrator", () => {
 
     const result = await orchestrator.runSprint();
 
-    expect(result.status).toBe("paused");
+    expect(result.status).toBe("complete");
     expect(result.totalStories).toBe(3);
     expect(result.completed).toBe(2);
     expect(result.failed).toBe(0);
