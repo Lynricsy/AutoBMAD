@@ -74,6 +74,7 @@ export interface StoryResult {
 
 // Sprint 处理结果
 export interface SprintResult {
+  status: "complete" | "paused" | "failed";
   totalStories: number;
   completed: number;
   failed: number;
