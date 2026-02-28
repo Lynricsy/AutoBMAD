@@ -23,8 +23,11 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Test
-        run: bun test
+      - name: Test (CLI, isolated to prevent mock.module leak)
+        run: bun test tests/cli/
+
+      - name: Test (unit + integration)
+        run: bun test --ignore tests/cli/
 
       - name: Build
         run: bun run build
