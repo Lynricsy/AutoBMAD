@@ -1,6 +1,6 @@
 {
   "name": "autobmad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Automated BMAD sprint orchestration CLI — from planning to dev, adversarial code review, and fix loops, fully unattended",
   "type": "module",
   "bin": {
