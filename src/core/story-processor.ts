@@ -16,6 +16,8 @@ import {
   WorkflowHaltError,
 } from "./errors.js";
 import { type Logger } from "./logger.js";
+import { renderFixLoop, renderStoryProgress } from "../cli/dashboard.js";
+import type { StepDisplay } from "../cli/dashboard.js";
 
 const STORY_STATUS_SET = new Set<string>(Object.values(StoryStatus));
 
@@ -83,7 +85,11 @@ export class StoryProcessor {
     private config: AutoBMADConfig,
   ) {}
 
-  async processStory(storyKey: string): Promise<StoryResult> {
+  async processStory(
+    storyKey: string,
+    storyIndex: number,
+    totalStories: number,
+  ): Promise<StoryResult> {
     const startedAt = Date.now();
 
     await this.runState.load();
@@ -93,9 +99,26 @@ export class StoryProcessor {
 
     try {
       const lifecycle = getLifecycle(status);
+      const steps: StepDisplay[] = lifecycle.map((step) => ({
+        workflow: step.workflow,
+        status: "pending" as const,
+      }));
 
-      for (const step of lifecycle) {
+      for (let i = 0; i < lifecycle.length; i += 1) {
+        const step = lifecycle[i]!;
+
+        steps[i].status = "running";
+        if (!this.logger.silent) {
+          renderStoryProgress(storyKey, storyIndex, totalStories, steps);
+        }
+
         await this.runWorkflow(storyKey, step.workflow, customPrompts);
+
+        steps[i].status = "completed";
+        if (!this.logger.silent) {
+          renderStoryProgress(storyKey, storyIndex, totalStories, steps);
+        }
+
         status = await this.readStoryStatus(storyKey);
 
         if (step.workflow === WorkflowType.CodeReview) {
@@ -208,6 +231,10 @@ export class StoryProcessor {
         storyKey,
         retries: retries + 1,
       });
+
+      if (!this.logger.silent) {
+        renderFixLoop(storyKey, retries + 1, this.config.maxRetries);
+      }
 
       this.runState.incrementRetry(storyKey);
 

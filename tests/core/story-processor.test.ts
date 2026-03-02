@@ -176,6 +176,8 @@ function makeRunStateStore() {
       delete retries[storyKey];
     },
 
+    setCurrentSprint(_sprint: number): void {},
+
     async reset(): Promise<void> {},
   };
 
@@ -225,7 +227,7 @@ describe("StoryProcessor", () => {
     const logger = new StubLogger();
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
 
-    const result = await processor.processStory(storyKey);
+    const result = await processor.processStory(storyKey, 1, 3);
 
     expect(result.storyKey).toBe(storyKey);
     expect(result.success).toBe(true);
@@ -282,7 +284,7 @@ describe("StoryProcessor", () => {
     const logger = new StubLogger();
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig({ maxRetries: 3 }));
 
-    const result = await processor.processStory(storyKey);
+    const result = await processor.processStory(storyKey, 1, 3);
 
     expect(result.success).toBe(true);
     expect(result.retries).toBe(1);
@@ -336,7 +338,7 @@ describe("StoryProcessor", () => {
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig({ maxRetries: 2 }));
 
     try {
-      await processor.processStory(storyKey);
+      await processor.processStory(storyKey, 1, 3);
       throw new Error("expected processStory to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(MaxRetriesExceededError);
@@ -381,7 +383,7 @@ describe("StoryProcessor", () => {
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
 
     try {
-      await processor.processStory(storyKey);
+      await processor.processStory(storyKey, 1, 3);
       throw new Error("expected processStory to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(WorkflowHaltError);
@@ -423,7 +425,7 @@ describe("StoryProcessor", () => {
     const logger = new StubLogger();
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
 
-    const result = await processor.processStory(storyKey);
+    const result = await processor.processStory(storyKey, 1, 3);
 
     expect(result.success).toBe(true);
     expect(result.retries).toBe(0);
