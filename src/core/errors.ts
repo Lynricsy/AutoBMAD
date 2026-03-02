@@ -47,3 +47,35 @@ export class StateCorruptionError extends Error {
     this.details = details;
   }
 }
+
+export class ProjectCompleteError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(`Project complete: ${reason}`);
+    this.name = "ProjectCompleteError";
+    this.reason = reason;
+  }
+}
+
+export class MaxSprintsExceededError extends Error {
+  readonly maxSprints: number;
+
+  constructor(maxSprints: number) {
+    super(`Maximum sprints exceeded (${maxSprints})`);
+    this.name = "MaxSprintsExceededError";
+    this.maxSprints = maxSprints;
+  }
+}
+
+export class DuplicateStoriesError extends Error {
+  readonly sprintNumber: number;
+  readonly duplicateKeys: string[];
+
+  constructor(sprintNumber: number, duplicateKeys: string[]) {
+    super(`Sprint ${sprintNumber} generated duplicate stories: ${duplicateKeys.join(", ")}`);
+    this.name = "DuplicateStoriesError";
+    this.sprintNumber = sprintNumber;
+    this.duplicateKeys = duplicateKeys;
+  }
+}

@@ -10,6 +10,7 @@ export interface AutoBMADConfig {
   verbose: boolean;
   configPath?: string;
   prompts?: Partial<Record<string, string>>;
+  maxSprints?: number;
 }
 
 export const DEFAULT_CONFIG: AutoBMADConfig = {
@@ -17,6 +18,7 @@ export const DEFAULT_CONFIG: AutoBMADConfig = {
   maxRetries: 3,
   timeout: 600_000, // 10 minutes
   verbose: false,
+  maxSprints: 10,
 };
 
 interface ConfigFile {
@@ -24,6 +26,7 @@ interface ConfigFile {
   timeout?: number;
   verbose?: boolean;
   prompts?: Record<string, string>;
+  maxSprints?: number;
 }
 
 /**
@@ -39,6 +42,7 @@ function parseCliArgs(argv: string[]): Partial<AutoBMADConfig> & { configPath?: 
       timeout: { type: "string", short: "t" },
       config: { type: "string", short: "c" },
       verbose: { type: "boolean", short: "v" },
+      "max-sprints": { type: "string", short: "s" },
     },
     strict: false,
   });
@@ -55,6 +59,10 @@ function parseCliArgs(argv: string[]): Partial<AutoBMADConfig> & { configPath?: 
   if (values["timeout"] !== undefined) {
     const parsed = parseInt(values["timeout"] as string, 10);
     if (!isNaN(parsed)) result.timeout = parsed;
+  }
+  if (values["max-sprints"] !== undefined) {
+    const parsed = parseInt(values["max-sprints"] as string, 10);
+    if (!isNaN(parsed) && parsed >= 1) result.maxSprints = parsed;
   }
   if (values["config"] !== undefined) {
     result.configPath = values["config"] as string;
@@ -82,6 +90,7 @@ async function loadYamlConfig(path: string): Promise<Partial<AutoBMADConfig>> {
   if (typeof raw.timeout === "number") result.timeout = raw.timeout;
   if (typeof raw.verbose === "boolean") result.verbose = raw.verbose;
   if (raw.prompts && typeof raw.prompts === "object") result.prompts = raw.prompts;
+  if (typeof raw.maxSprints === "number") result.maxSprints = raw.maxSprints;
 
   return result;
 }

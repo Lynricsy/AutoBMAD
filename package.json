@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "bun run scripts/build.ts",
-    "test": "bun test",
+    "test": "bun test tests/core/ tests/integration/ && bun test tests/cli/",
     "typecheck": "bunx tsc --noEmit",
     "start": "bun run src/cli/index.ts",
     "prepublishOnly": "bun run build"
