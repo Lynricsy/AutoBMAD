@@ -5,10 +5,11 @@ Usage:
   autobmad <command> [options]
 
 Commands:
-  start   Start or continue a sprint run (runs planning if needed)
-  resume  Resume a paused sprint run from .autobmad-state.json
-  status  Show sprint status summary from sprint-status.yaml
-  reset   Reset local run state (.autobmad-state.json)
+  start    Start or continue a sprint run (runs planning if needed)
+  resume   Resume a paused sprint run from .autobmad-state.json
+  status   Show sprint status summary from sprint-status.yaml
+  reset    Reset local run state (.autobmad-state.json)
+  run-all  Run all sprints to completion (multi-sprint mode)
 
 Options:
   --dir, -d <path>    Project directory (default: cwd)
@@ -59,6 +60,11 @@ export async function runCli(argv: string[] = process.argv): Promise<number> {
       case "reset": {
         const { resetCommand } = await import("./commands/reset.js");
         await resetCommand();
+        return resolveExitCode();
+      }
+      case "run-all": {
+        const { runAllCommand } = await import("./commands/run-all.js");
+        await runAllCommand();
         return resolveExitCode();
       }
       default:
