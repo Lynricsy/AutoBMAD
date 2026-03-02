@@ -21,7 +21,7 @@
 ### 全局安装（推荐）
 
 ```bash
-bun add -g auto-bmad
+bun add -g autobmad
 ```
 
 安装后即可在任何目录使用 `autobmad` 命令。

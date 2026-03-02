@@ -30,8 +30,8 @@ describe("package.json fields", () => {
     packageJson = await loadPackageJson();
   });
 
-  test("name is auto-bmad", () => {
-    expect(packageJson.name).toBe("auto-bmad");
+  test("name is autobmad", () => {
+    expect(packageJson.name).toBe("autobmad");
   });
 
   test("version matches semver", () => {
