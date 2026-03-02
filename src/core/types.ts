@@ -158,5 +158,6 @@ export interface IRunStateStore {
   setError(error: ErrorInfo): void;
   clearStory(): void;
   markComplete(storyKey: string): void;
+  setCurrentSprint(sprint: number): void;
   reset(): Promise<void>;
 }

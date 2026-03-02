@@ -296,9 +296,13 @@ export class SprintOrchestrator {
     const customPrompts =
       typeof custom === "string" ? { "sprint-planning": custom } : undefined;
 
+    const state = await this.runState.load();
     const prompt = renderPrompt(
       "sprint-planning",
-      { projectDir: this.config.projectDir },
+      {
+        projectDir: this.config.projectDir,
+        currentSprint: String(state.currentSprint ?? 1),
+      },
       customPrompts,
     );
 
