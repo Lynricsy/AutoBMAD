@@ -4,6 +4,10 @@ import {
   EpicStatus,
   WorkflowType,
   AgentType,
+  ProjectCompleteReason,
+  type MultiSprintConfig,
+  type MultiSprintResult,
+  type RunState,
 } from "../../src/core/types.js";
 import {
   StoryCompleteError,
@@ -156,5 +160,50 @@ describe("StateCorruptionError", () => {
   test("is instanceof StateCorruptionError", () => {
     const err = new StateCorruptionError("/state.yaml", "bad");
     expect(err instanceof StateCorruptionError).toBe(true);
+  });
+});
+
+describe("ProjectCompleteReason enum", () => {
+  test("has all 3 correct string values", () => {
+    expect(ProjectCompleteReason.NoNewStories).toBe("no-new-stories");
+    expect(ProjectCompleteReason.MaxSprintsReached).toBe("max-sprints-reached");
+    expect(ProjectCompleteReason.DuplicateStoriesDetected).toBe("duplicate-stories-detected");
+  });
+});
+
+describe("MultiSprintConfig interface", () => {
+  test("can be created with maxSprints field", () => {
+    const config: MultiSprintConfig = { maxSprints: 5 };
+    expect(config.maxSprints).toBe(5);
+  });
+});
+
+describe("MultiSprintResult interface", () => {
+  test("can be created with all required fields", () => {
+    const result: MultiSprintResult = {
+      reason: ProjectCompleteReason.NoNewStories,
+      totalSprints: 2,
+      sprintResults: [],
+      durationMs: 1000,
+    };
+    expect(result.reason).toBe("no-new-stories");
+    expect(result.totalSprints).toBe(2);
+    expect(result.sprintResults).toHaveLength(0);
+    expect(result.durationMs).toBe(1000);
+  });
+});
+
+describe("RunState interface", () => {
+  test("includes currentSprint field", () => {
+    const state: RunState = {
+      currentStory: null,
+      retries: {},
+      errors: [],
+      startedAt: new Date(),
+      lastUpdatedAt: new Date(),
+      completedStories: [],
+      currentSprint: 1,
+    };
+    expect(state.currentSprint).toBe(1);
   });
 });

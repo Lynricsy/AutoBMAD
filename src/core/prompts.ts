@@ -8,6 +8,7 @@ export const DEFAULT_PROMPTS: Record<WorkflowName, string> = {
   "sprint-planning": `Run the sprint-planning workflow for this BMAD project.
 Read the PRD and architecture docs, then create or update the sprint-status.yaml file.
 Project directory: {{projectDir}}
+Current sprint number: {{currentSprint}}
 Do not ask questions. Complete the workflow fully.`,
 
   "create-story": `Run the create-story workflow for story {{storyKey}}.

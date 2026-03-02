@@ -5,6 +5,9 @@ import { SprintStatusManager } from "../../core/state-manager.js";
 import { RunStateStore } from "../../core/run-state.js";
 import { WorkflowRunner } from "../../core/runner.js";
 import { SprintOrchestrator } from "../../core/sprint-orchestrator.js";
+import { SprintArchiver } from "../../core/sprint-archiver.js";
+import { MultiSprintOrchestrator } from "../../core/multi-sprint-orchestrator.js";
+import { ProjectCompleteReason } from "../../core/types.js";
 
 function parseDir(argv: string[]): string {
   const idx = argv.findIndex((arg) => arg === "--dir" || arg === "-d");
@@ -23,6 +26,17 @@ function mapSprintExitCode(status: "complete" | "paused" | "failed"): number {
     case "paused":
       return 2;
     case "failed":
+      return 1;
+  }
+}
+
+function mapMultiSprintExitCode(reason: ProjectCompleteReason): number {
+  switch (reason) {
+    case ProjectCompleteReason.NoNewStories:
+      return 0;
+    case ProjectCompleteReason.MaxSprintsReached:
+      return 2;
+    case ProjectCompleteReason.DuplicateStoriesDetected:
       return 1;
   }
 }
@@ -53,6 +67,47 @@ export async function resumeCommand(): Promise<void> {
 
   const stateRepo = new SprintStatusManager(statusPath);
   const runState = new RunStateStore(statePath);
+
+  const state = await runState.load();
+
+  if ((state.currentSprint ?? 1) > 1) {
+    const artifactsDir = join(
+      config.projectDir,
+      "_bmad-output/implementation-artifacts",
+    );
+    const archiver = new SprintArchiver(artifactsDir);
+
+    const runner = new WorkflowRunner(
+      { timeout: config.timeout },
+      {
+        spawn: (cmd, options) => Bun.spawn(cmd, options),
+        signals: process,
+        now: () => Date.now(),
+        setTimeout,
+        clearTimeout,
+      },
+    );
+
+    const sprintOrch = new SprintOrchestrator(stateRepo, runner, runState, logger, config);
+    const multiOrch = new MultiSprintOrchestrator(
+      sprintOrch,
+      runState,
+      archiver,
+      stateRepo,
+      { maxSprints: config.maxSprints ?? 10 },
+    );
+
+    const result = await multiOrch.runAllSprints();
+
+    logger.info("Multi-sprint run complete", {
+      reason: result.reason,
+      totalSprints: result.totalSprints,
+      durationMs: result.durationMs,
+    });
+
+    process.exitCode = mapMultiSprintExitCode(result.reason);
+    return;
+  }
 
   const runner = new WorkflowRunner(
     { timeout: config.timeout },

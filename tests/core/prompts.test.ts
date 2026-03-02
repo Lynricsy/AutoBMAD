@@ -139,9 +139,10 @@ describe("validatePromptVariables", () => {
     expect(missing).not.toContain("projectDir");
   });
 
-  test("sprint-planning only requires projectDir", () => {
+  test("sprint-planning requires projectDir and currentSprint", () => {
     const missing = validatePromptVariables("sprint-planning", {
       projectDir: "/proj",
+      currentSprint: "1",
     });
     expect(missing).toHaveLength(0);
   });
@@ -149,5 +150,37 @@ describe("validatePromptVariables", () => {
   test("sprint-planning returns projectDir as missing when absent", () => {
     const missing = validatePromptVariables("sprint-planning", {});
     expect(missing).toContain("projectDir");
+  });
+
+  test("sprint-planning returns currentSprint as missing when absent", () => {
+    const missing = validatePromptVariables("sprint-planning", {
+      projectDir: "/test",
+    });
+    expect(missing).toEqual(["currentSprint"]);
+  });
+
+  test("sprint-planning returns empty when both projectDir and currentSprint provided", () => {
+    const missing = validatePromptVariables("sprint-planning", {
+      projectDir: "/test",
+      currentSprint: "1",
+    });
+    expect(missing).toHaveLength(0);
+  });
+});
+
+describe("sprint-planning {{currentSprint}} template variable", () => {
+  test("DEFAULT_PROMPTS sprint-planning contains {{currentSprint}}", () => {
+    expect(DEFAULT_PROMPTS["sprint-planning"]).toContain("{{currentSprint}}");
+  });
+
+  test("renderPrompt sprint-planning replaces both projectDir and currentSprint", () => {
+    const result = renderPrompt("sprint-planning", {
+      projectDir: "/test",
+      currentSprint: "2",
+    });
+    expect(result).toContain("/test");
+    expect(result).toContain("2");
+    expect(result).not.toContain("{{projectDir}}");
+    expect(result).not.toContain("{{currentSprint}}");
   });
 });

@@ -29,6 +29,13 @@ export enum AgentType {
   Hephaestus = "hephaestus",
 }
 
+// 项目完成原因
+export enum ProjectCompleteReason {
+  NoNewStories = "no-new-stories",
+  MaxSprintsReached = "max-sprints-reached",
+  DuplicateStoriesDetected = "duplicate-stories-detected",
+}
+
 // Sprint 状态 YAML 数据结构（匹配真实 sprint-status.yaml 格式）
 export interface SprintStatusData {
   generated: string;
@@ -83,6 +90,19 @@ export interface SprintResult {
   durationMs: number;
 }
 
+// 多 Sprint 配置
+export interface MultiSprintConfig {
+  maxSprints: number;
+}
+
+// 多 Sprint 运行结果
+export interface MultiSprintResult {
+  reason: ProjectCompleteReason;
+  totalSprints: number;
+  sprintResults: SprintResult[];
+  durationMs: number;
+}
+
 // 错误信息（用于日志/报告）
 export interface ErrorInfo {
   message: string;
@@ -101,6 +121,7 @@ export interface AutoBMADConfig {
   verbose: boolean;
   configPath?: string;
   prompts?: Partial<Record<WorkflowType, string>>;
+  maxSprints?: number;
 }
 
 // 运行状态（支持断点续跑）
@@ -111,6 +132,7 @@ export interface RunState {
   startedAt: Date;
   lastUpdatedAt: Date;
   completedStories: string[];
+  currentSprint?: number;
 }
 
 // 依赖注入接口：状态仓库
@@ -136,5 +158,6 @@ export interface IRunStateStore {
   setError(error: ErrorInfo): void;
   clearStory(): void;
   markComplete(storyKey: string): void;
+  setCurrentSprint(sprint: number): void;
   reset(): Promise<void>;
 }

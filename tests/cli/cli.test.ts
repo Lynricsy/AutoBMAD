@@ -45,6 +45,7 @@ describe("AutoBMAD CLI", () => {
     const fakeConfig = {
       projectDir: "/tmp/autobmad-cli-test",
       maxRetries: 3,
+      maxSprints: 10,
       timeout: 123_000,
       verbose: true,
     };
@@ -90,6 +91,7 @@ describe("AutoBMAD CLI", () => {
       }
       async load() {
         return {
+          currentSprint: 1,
           currentStory: null,
           retries: {},
           errors: [],
@@ -243,6 +245,7 @@ describe("AutoBMAD CLI", () => {
       }
       async load() {
         return {
+          currentSprint: 1,
           currentStory: null,
           retries: {},
           errors: [],

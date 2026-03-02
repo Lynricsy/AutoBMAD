@@ -141,4 +141,42 @@ describe("loadConfig", () => {
     expect(config.maxRetries).toBe(DEFAULT_CONFIG.maxRetries);
     expect(config.timeout).toBe(DEFAULT_CONFIG.timeout);
   });
+
+  test("DEFAULT_CONFIG has maxSprints: 10", () => {
+    expect(DEFAULT_CONFIG.maxSprints).toBe(10);
+  });
+
+  test("CLI --max-sprints sets maxSprints", async () => {
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir, "--max-sprints", "5"]);
+    expect(config.maxSprints).toBe(5);
+  });
+
+  test("CLI -s short flag sets maxSprints", async () => {
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir, "-s", "3"]);
+    expect(config.maxSprints).toBe(3);
+  });
+
+  test("loads maxSprints from YAML config file", async () => {
+    const yaml = `maxSprints: 7\n`;
+    writeFileSync(join(tmpDir, ".autobmad.yaml"), yaml);
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir]);
+    expect(config.maxSprints).toBe(7);
+  });
+
+  test("CLI --max-sprints overrides YAML config value", async () => {
+    const yaml = `maxSprints: 7\n`;
+    writeFileSync(join(tmpDir, ".autobmad.yaml"), yaml);
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir, "--max-sprints", "20"]);
+    expect(config.maxSprints).toBe(20);
+  });
+
+  test("invalid --max-sprints 0 is ignored (must be >= 1)", async () => {
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir, "--max-sprints", "0"]);
+    expect(config.maxSprints).toBe(DEFAULT_CONFIG.maxSprints);
+  });
+
+  test("invalid --max-sprints abc is ignored (NaN check)", async () => {
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir, "--max-sprints", "abc"]);
+    expect(config.maxSprints).toBe(DEFAULT_CONFIG.maxSprints);
+  });
 });
