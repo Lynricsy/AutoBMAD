@@ -16,6 +16,7 @@ function createDefaultRunState(now: Date = new Date()): RunState {
     startedAt: now,
     lastUpdatedAt: now,
     completedStories: [],
+    currentSprint: 1,
   };
 }
 
@@ -108,6 +109,10 @@ function hydrateRunState(value: unknown, filePath: string): RunState {
   const startedAt = parseDate(value.startedAt, filePath, "startedAt");
   const lastUpdatedAt = parseDate(value.lastUpdatedAt, filePath, "lastUpdatedAt");
 
+  const currentSprint = typeof value.currentSprint === 'number' && value.currentSprint > 0
+    ? Math.floor(value.currentSprint)
+    : 1;
+
   return {
     currentStory,
     retries,
@@ -115,6 +120,7 @@ function hydrateRunState(value: unknown, filePath: string): RunState {
     startedAt,
     lastUpdatedAt,
     completedStories,
+    currentSprint,
   };
 }
 
@@ -198,6 +204,11 @@ export class RunStateStore implements IRunStateStore {
 
     delete this.state.retries[storyKey];
     this.state.currentStory = null;
+    void this.save(this.state);
+  }
+
+  setCurrentSprint(sprint: number): void {
+    this.state.currentSprint = sprint;
     void this.save(this.state);
   }
 

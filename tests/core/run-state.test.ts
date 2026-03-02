@@ -232,4 +232,82 @@ describe("RunStateStore", () => {
 
     expect(existsSync(`${statePath}.tmp`)).toBe(false);
   });
+
+  test("load() returns currentSprint: 1 as default when file does not exist", async () => {
+    const store = new RunStateStore(statePath);
+    const state = await store.load();
+    expect(state.currentSprint).toBe(1);
+  });
+
+  test("hydrateRunState() parses currentSprint from JSON correctly", async () => {
+    const store = new RunStateStore(statePath);
+    await store.load();
+
+    await store.save({
+      currentStory: null,
+      retries: {},
+      errors: [],
+      startedAt: new Date("2020-01-01T00:00:00.000Z"),
+      lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
+      completedStories: [],
+      currentSprint: 3,
+    });
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.currentSprint).toBe(3);
+  });
+
+  test("hydrateRunState() defaults currentSprint to 1 for old state files without it", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const oldState = {
+      currentStory: null,
+      retries: {},
+      errors: [],
+      startedAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+      lastUpdatedAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+      completedStories: [],
+    };
+    writeFileSync(statePath, JSON.stringify(oldState, null, 2), "utf-8");
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.currentSprint).toBe(1);
+  });
+
+  test("hydrateRunState() defaults currentSprint to 1 for invalid values", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const badState = {
+      currentStory: null,
+      retries: {},
+      errors: [],
+      startedAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+      lastUpdatedAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+      completedStories: [],
+      currentSprint: -5,
+    };
+    writeFileSync(statePath, JSON.stringify(badState, null, 2), "utf-8");
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.currentSprint).toBe(1);
+  });
+
+  test("setCurrentSprint() updates currentSprint and persists", async () => {
+    const store = new RunStateStore(statePath);
+    await store.load();
+
+    store.setCurrentSprint(4);
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.currentSprint).toBe(4);
+  });
+
+  test("reset() resets currentSprint to 1", async () => {
+    const store = new RunStateStore(statePath);
+    await store.load();
+
+    store.setCurrentSprint(7);
+    await store.reset();
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.currentSprint).toBe(1);
+  });
 });
