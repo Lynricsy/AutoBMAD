@@ -97,6 +97,11 @@ export class Logger {
     this.logFilePath = `${options.logDir}/${fileName}`;
   }
 
+  /** 是否处于静默模式（不输出到终端） */
+  get silent(): boolean {
+    return this.options.silent ?? false;
+  }
+
   // ── 公共日志方法 ───────────────────────────────────────────────────────────
 
   debug(message: string, data?: Record<string, unknown>): void {

@@ -95,6 +95,7 @@ export async function resumeCommand(): Promise<void> {
       archiver,
       stateRepo,
       { maxSprints: config.maxSprints ?? 10 },
+      logger,
     );
 
     const result = await multiOrch.runAllSprints();

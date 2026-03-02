@@ -10,6 +10,11 @@ import {
   type SprintResult,
 } from "../../src/core/types.js";
 import { DuplicateStoriesError, ProjectCompleteError } from "../../src/core/errors.js";
+import { Logger, LogLevel } from "../../src/core/logger.js";
+
+function makeSilentLogger(): Logger {
+  return new Logger("test", { level: LogLevel.Info, logDir: "/tmp/test-logs", silent: true });
+}
 
 function makeRunState(overrides: Partial<RunState> = {}): RunState {
   const now = new Date();
@@ -161,12 +166,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 10 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     const result = await multi.runAllSprints();
 
@@ -184,12 +190,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 2 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     const result = await multi.runAllSprints();
 
@@ -207,12 +214,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 2 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     try {
       await multi.runAllSprints();
@@ -235,12 +243,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 3 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     await multi.runAllSprints();
 
@@ -255,12 +264,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 3 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     await multi.runAllSprints();
 
@@ -275,12 +285,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 3 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     await multi.runAllSprints();
 
@@ -288,58 +299,56 @@ describe("MultiSprintOrchestrator", () => {
   });
 
   test("logs progress messages via console.log", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
     const orchestrator = makeOrchestrator([completeResult(), completeResult()]);
     const runState = makeRunStateStore(makeRunState({ currentSprint: 1 }));
     const archiver = makeArchiver();
     const stateRepo = makeStateRepo([["1-1-a"], ["2-1-b"]]);
     const config = { maxSprints: 2 };
+    const logger = makeSilentLogger();
+    const infoSpy = spyOn(logger, "info");
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          logger,
+        );
 
     await multi.runAllSprints();
 
-    const messages = logSpy.mock.calls.map((c) => String(c[0] ?? ""));
-    expect(messages.some((m) => m.includes("=== Sprint 1 ==="))).toBe(true);
-    expect(messages.some((m) => m.includes("=== Sprint 2 ==="))).toBe(true);
-
-    logSpy.mockRestore();
+    const messages = infoSpy.mock.calls.map((c) => String(c[0] ?? ""));
+    expect(messages.some((m) => m.includes("Sprint 1 started"))).toBe(true);
+    expect(messages.some((m) => m.includes("Sprint 2 started"))).toBe(true);
   });
 
   test("status='failed' -> skip and continue to next sprint", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
     const orchestrator = makeOrchestrator([failedResult(), completeResult()]);
     const runState = makeRunStateStore(makeRunState({ currentSprint: 1 }));
     const archiver = makeArchiver();
     const stateRepo = makeStateRepo([["2-1-ok"]]);
     const config = { maxSprints: 2 };
+    const logger = makeSilentLogger();
+    const warnSpy = spyOn(logger, "warn");
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          logger,
+        );
 
     const result = await multi.runAllSprints();
 
     expect(result.sprintResults.map((r) => r.status)).toEqual(["failed", "complete"]);
     expect(archiver.archive.mock.calls.map((c) => c[0])).toEqual([2]);
     expect(runState.reset.mock.calls).toHaveLength(1);
-    expect(logSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n")).toContain(
+    expect(warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n")).toContain(
       "Sprint 1 failed, skipping to next",
     );
-
-    logSpy.mockRestore();
   });
 
   test("status='paused' -> stop loop and return partial result", async () => {
@@ -350,12 +359,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 5 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     const result = await multi.runAllSprints();
 
@@ -373,12 +383,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 2 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     const result = await multi.runAllSprints();
 
@@ -397,12 +408,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 4 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     const result = await multi.runAllSprints();
 
@@ -422,12 +434,13 @@ describe("MultiSprintOrchestrator", () => {
     const config = { maxSprints: 10 };
 
     const multi = new MultiSprintOrchestrator(
-      orchestrator,
-      runState.store,
-      archiver,
-      stateRepo.repo,
-      config,
-    );
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
 
     const result = await multi.runAllSprints();
 
