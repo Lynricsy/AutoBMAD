@@ -28,7 +28,7 @@ interface WorkflowRunnerDeps {
   clearTimeout: typeof globalThis.clearTimeout;
 }
 
-const DEFAULT_TIMEOUT_MS = 3_600_000;
+const DEFAULT_TIMEOUT_MS = 18_000_000;
 const SIGKILL_GRACE_MS = 5_000;
 
 export function buildOhMyOpenCodeRunCommand(options: RunOptions): string[] {

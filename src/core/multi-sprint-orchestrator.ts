@@ -8,6 +8,7 @@ import {
 } from "./types.js";
 import { detectDuplicateStories } from "./duplicate-detector.js";
 import { DuplicateStoriesError, ProjectCompleteError } from "./errors.js";
+import { Logger } from "./logger.js";
 
 type SprintOrchestratorLike = {
   runSprint(): Promise<SprintResult>;
@@ -24,6 +25,7 @@ export class MultiSprintOrchestrator {
     private archiver: SprintArchiverLike,
     private stateRepo: IStateRepository,
     private config: MultiSprintConfig,
+    private logger: Logger,
   ) {}
 
   async runAllSprints(): Promise<MultiSprintResult> {
@@ -37,7 +39,7 @@ export class MultiSprintOrchestrator {
     let reason: ProjectCompleteReason = ProjectCompleteReason.MaxSprintsReached;
 
     while (currentSprint <= this.config.maxSprints) {
-      console.log(`\n=== Sprint ${currentSprint} ===\n`);
+      this.logger.info(`Sprint ${currentSprint} started`);
 
       const stateToPersist = await this.runState.load();
       stateToPersist.currentSprint = currentSprint;
@@ -75,7 +77,7 @@ export class MultiSprintOrchestrator {
       }
 
       if (result.status === "failed") {
-        console.log(`Sprint ${currentSprint} failed, skipping to next`);
+        this.logger.warn(`Sprint ${currentSprint} failed, skipping to next`);
         currentSprint += 1;
         continue;
       }

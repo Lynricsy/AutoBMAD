@@ -357,12 +357,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 10 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 10 },
+              logger,
+            );
 
       const result = await multi.runAllSprints();
 
@@ -417,12 +418,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 2 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 2 },
+              logger,
+            );
 
       const result = await multi.runAllSprints();
 
@@ -475,12 +477,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 2 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 2 },
+              logger,
+            );
 
       try {
         await multi.runAllSprints();
@@ -500,13 +503,12 @@ describe("Integration: multi-sprint orchestration", () => {
   });
 
   test("sprint failure: one sprint returns failed, records error, continues to next sprint", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    try {
-      await writeSprintStatusYaml({ yamlPath, storyStatuses: [] });
+    await writeSprintStatusYaml({ yamlPath, storyStatuses: [] });
 
       const stateRepo = new SprintStatusManager(yamlPath);
       const runState = new RunStateStore(runStatePath);
       const logger = new StubLogger();
+      const warnSpy = spyOn(logger, "warn");
       const config = makeConfig(projectDir);
       const runner = new IntegrationMockRunner();
 
@@ -546,12 +548,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 2 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 2 },
+              logger,
+            );
 
       const result = await multi.runAllSprints();
 
@@ -559,11 +562,8 @@ describe("Integration: multi-sprint orchestration", () => {
       expect(await Bun.file(archiver.getArchivePath(1)).exists()).toBe(false);
       expect(await Bun.file(archiver.getArchivePath(2)).exists()).toBe(true);
 
-      const messages = logSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+      const messages = warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
       expect(messages).toContain("Sprint 1 failed, skipping to next");
-    } finally {
-      logSpy.mockRestore();
-    }
   });
 
   test("resume from crash: currentSprint=2 starts from sprint 2, not 1", async () => {
@@ -607,12 +607,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 2 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 2 },
+              logger,
+            );
 
       const result = await multi.runAllSprints();
 
@@ -652,12 +653,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 1 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 1 },
+              logger,
+            );
 
       await multi.runAllSprints();
 
@@ -722,12 +724,13 @@ describe("Integration: multi-sprint orchestration", () => {
       });
 
       const multi = new MultiSprintOrchestrator(
-        orchestrator,
-        runState,
-        archiver,
-        stateRepo,
-        { maxSprints: 2 },
-      );
+              orchestrator,
+              runState,
+              archiver,
+              stateRepo,
+              { maxSprints: 2 },
+              logger,
+            );
 
       const result = await multi.runAllSprints();
 

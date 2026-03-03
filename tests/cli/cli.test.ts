@@ -10,9 +10,41 @@ const MODULES = {
   orchestrator: import.meta.resolve("../../src/core/sprint-orchestrator.js"),
 } as const;
 
-afterEach(() => {
+// 重要：mock.restore() 不会清理 mock.module() 的覆盖（Bun 文档明确说明）。
+// 这里手动还原被覆盖的模块，避免跨测试文件污染。
+const ORIGINAL_MODULE_EXPORTS = await (async () => {
+  const [config, logger, stateManager, runState, runner, orchestrator] = await Promise.all([
+    import(MODULES.config),
+    import(MODULES.logger),
+    import(MODULES.stateManager),
+    import(MODULES.runState),
+    import(MODULES.runner),
+    import(MODULES.orchestrator),
+  ]);
+
+  return {
+    config: { ...config },
+    logger: { ...logger },
+    stateManager: { ...stateManager },
+    runState: { ...runState },
+    runner: { ...runner },
+    orchestrator: { ...orchestrator },
+  } as const;
+})();
+
+async function restoreMockedModules(): Promise<void> {
+  await mock.module(MODULES.config, () => ({ ...ORIGINAL_MODULE_EXPORTS.config }));
+  await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger }));
+  await mock.module(MODULES.stateManager, () => ({ ...ORIGINAL_MODULE_EXPORTS.stateManager }));
+  await mock.module(MODULES.runState, () => ({ ...ORIGINAL_MODULE_EXPORTS.runState }));
+  await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner }));
+  await mock.module(MODULES.orchestrator, () => ({ ...ORIGINAL_MODULE_EXPORTS.orchestrator }));
+}
+
+afterEach(async () => {
   mock.restore();
   process.exitCode = undefined;
+  await restoreMockedModules();
 });
 
 describe("AutoBMAD CLI", () => {
@@ -51,6 +83,7 @@ describe("AutoBMAD CLI", () => {
     };
 
     await mock.module(MODULES.config, () => ({
+      ...ORIGINAL_MODULE_EXPORTS.config,
       loadConfig: async (argv?: string[]) => {
         calls.loadConfig.push(argv);
         return fakeConfig;
@@ -75,7 +108,7 @@ describe("AutoBMAD CLI", () => {
       Fatal: "fatal",
     };
 
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
 
     class MockSprintStatusManager {
       constructor(statusFilePath: string) {
@@ -119,7 +152,7 @@ describe("AutoBMAD CLI", () => {
       }
     }
 
-    await mock.module(MODULES.runner, () => ({ WorkflowRunner: MockWorkflowRunner }));
+    await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner, WorkflowRunner: MockWorkflowRunner }));
 
     class MockSprintOrchestrator {
       constructor(stateRepo: any, runner: any, runState: any, logger: any, config: any) {
@@ -199,7 +232,7 @@ describe("AutoBMAD CLI", () => {
       Fatal: "fatal",
     };
 
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
 
     class MockSprintOrchestrator {
       constructor(_stateRepo: any, _runner: any, _runState: any, _logger: any, _config: any) {}

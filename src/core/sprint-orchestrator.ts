@@ -18,6 +18,12 @@ import {
 import { StoryProcessor } from "./story-processor.js";
 import { renderPrompt } from "./prompts.js";
 import { type Logger } from "./logger.js";
+import {
+  renderError,
+  renderSprintBanner,
+  renderSprintSummary,
+  renderStoryComplete,
+} from "../cli/dashboard.js";
 
 export interface SprintStatusReport {
   totalStories: number;
@@ -59,7 +65,7 @@ export class SprintOrchestrator {
   ) {}
 
   async runSprint(): Promise<SprintResult> {
-    const startedAt = Date.now();
+    const startTime = Date.now();
     const storyProcessor = new StoryProcessor(
       this.stateRepo,
       this.runner,
@@ -92,6 +98,11 @@ export class SprintOrchestrator {
       }
 
       totalStories = (await this.stateRepo.getAllStories()).size;
+      let storyIndex = 0;
+
+      if (!this.logger.silent) {
+        renderSprintBanner(this.config, totalStories);
+      }
 
       while (!(await this.stateRepo.isSprintComplete())) {
         const storyKey = forcedStory ?? (await this.stateRepo.getNextStory());
@@ -108,9 +119,18 @@ export class SprintOrchestrator {
         await this.saveCurrentStory(storyKey);
 
         try {
-          const result = await storyProcessor.processStory(storyKey);
+          storyIndex += 1;
+          const result = await storyProcessor.processStory(
+            storyKey,
+            storyIndex,
+            totalStories,
+          );
           results.push(result);
           completed += 1;
+
+          if (!this.logger.silent) {
+            renderStoryComplete(storyKey, result);
+          }
         } catch (err) {
           if (err instanceof MaxRetriesExceededError) {
             skipped += 1;
@@ -122,7 +142,7 @@ export class SprintOrchestrator {
 
             this.runState.clearStory();
 
-            results.push({
+            const skippedResult: StoryResult = {
               storyKey,
               success: false,
               retries: err.maxRetries,
@@ -133,7 +153,13 @@ export class SprintOrchestrator {
                 workflow: WorkflowType.CodeReview,
               }),
               durationMs: 0,
-            });
+            };
+
+            results.push(skippedResult);
+
+            if (!this.logger.silent) {
+              renderStoryComplete(storyKey, skippedResult);
+            }
 
             continue;
           }
@@ -165,6 +191,10 @@ export class SprintOrchestrator {
 
           if (err instanceof WorkflowHaltError) {
             this.runState.setError(pauseErrorInfo);
+
+            if (!this.logger.silent) {
+              renderError(storyKey, err.workflow, err.reason || err.message);
+            }
           } else {
             this.runState.setError(pauseErrorInfo);
           }
@@ -181,30 +211,42 @@ export class SprintOrchestrator {
             storyKey,
           });
 
-          return {
+          const result: SprintResult = {
             status: "paused",
             totalStories,
             completed,
             failed,
             skipped,
             results,
-            durationMs: Date.now() - startedAt,
+            durationMs: Date.now() - startTime,
           };
+
+          if (!this.logger.silent) {
+            renderSprintSummary(result, Date.now() - startTime);
+          }
+
+          return result;
         }
       }
 
       const isComplete = await this.stateRepo.isSprintComplete();
       const status: SprintResult["status"] = isComplete ? "complete" : "paused";
 
-      return {
+      const result: SprintResult = {
         status,
         totalStories,
         completed,
         failed,
         skipped,
         results,
-        durationMs: Date.now() - startedAt,
+        durationMs: Date.now() - startTime,
       };
+
+      if (!this.logger.silent) {
+        renderSprintSummary(result, Date.now() - startTime);
+      }
+
+      return result;
     } catch (err) {
       const formatted = formatUnknownError(err);
       this.logger.error("Sprint orchestrator failed", {
@@ -218,15 +260,21 @@ export class SprintOrchestrator {
         }),
       );
 
-      return {
+      const result: SprintResult = {
         status: "failed",
         totalStories,
         completed,
         failed,
         skipped,
         results,
-        durationMs: Date.now() - startedAt,
+        durationMs: Date.now() - startTime,
       };
+
+      if (!this.logger.silent) {
+        renderSprintSummary(result, Date.now() - startTime);
+      }
+
+      return result;
     } finally {
       process.removeListener("SIGINT", sigintHandler);
     }

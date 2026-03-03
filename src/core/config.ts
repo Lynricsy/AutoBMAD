@@ -16,7 +16,7 @@ export interface AutoBMADConfig {
 export const DEFAULT_CONFIG: AutoBMADConfig = {
   projectDir: process.cwd(),
   maxRetries: 3,
-  timeout: 600_000, // 10 minutes
+  timeout: 18_000_000, // 5 hours
   verbose: false,
   maxSprints: 10,
 };

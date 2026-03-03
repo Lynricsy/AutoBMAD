@@ -14,6 +14,43 @@ const MODULES = {
   multiOrchestrator: import.meta.resolve("../../src/core/multi-sprint-orchestrator.js"),
 } as const;
 
+// 重要：mock.restore() 不会清理 mock.module() 的覆盖（Bun 文档明确说明）。
+// resume CLI 测试大量使用 mock.module()，如果不手动还原会污染后续 core/integration 测试。
+const ORIGINAL_MODULE_EXPORTS = await (async () => {
+  const [config, logger, stateManager, runState, runner, orchestrator, archiver, multiOrchestrator] = await Promise.all([
+    import(MODULES.config),
+    import(MODULES.logger),
+    import(MODULES.stateManager),
+    import(MODULES.runState),
+    import(MODULES.runner),
+    import(MODULES.orchestrator),
+    import(MODULES.archiver),
+    import(MODULES.multiOrchestrator),
+  ]);
+
+  return {
+    config: { ...config },
+    logger: { ...logger },
+    stateManager: { ...stateManager },
+    runState: { ...runState },
+    runner: { ...runner },
+    orchestrator: { ...orchestrator },
+    archiver: { ...archiver },
+    multiOrchestrator: { ...multiOrchestrator },
+  } as const;
+})();
+
+async function restoreMockedModules(): Promise<void> {
+  await mock.module(MODULES.config, () => ({ ...ORIGINAL_MODULE_EXPORTS.config }));
+  await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger }));
+  await mock.module(MODULES.stateManager, () => ({ ...ORIGINAL_MODULE_EXPORTS.stateManager }));
+  await mock.module(MODULES.runState, () => ({ ...ORIGINAL_MODULE_EXPORTS.runState }));
+  await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner }));
+  await mock.module(MODULES.orchestrator, () => ({ ...ORIGINAL_MODULE_EXPORTS.orchestrator }));
+  await mock.module(MODULES.archiver, () => ({ ...ORIGINAL_MODULE_EXPORTS.archiver }));
+  await mock.module(MODULES.multiOrchestrator, () => ({ ...ORIGINAL_MODULE_EXPORTS.multiOrchestrator }));
+}
+
 const TEST_DIR = "/tmp/autobmad-resume-test-dir";
 const fakeConfig = {
   projectDir: TEST_DIR,
@@ -54,10 +91,11 @@ class MockWorkflowRunner {
   constructor(_config: unknown, _deps: unknown) {}
 }
 
-afterEach(() => {
+afterEach(async () => {
   mock.restore();
   process.exitCode = undefined;
   try { rmSync(TEST_DIR, { recursive: true }); } catch {}
+  await restoreMockedModules();
 });
 
 describe("resumeCommand - no state file", () => {
@@ -65,9 +103,10 @@ describe("resumeCommand - no state file", () => {
     mkdirSync(TEST_DIR, { recursive: true });
 
     await mock.module(MODULES.config, () => ({
+      ...ORIGINAL_MODULE_EXPORTS.config,
       loadConfig: async () => fakeConfig,
     }));
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
     await mock.module(MODULES.stateManager, () => ({ SprintStatusManager: MockSprintStatusManager }));
     await mock.module(MODULES.runState, () => ({
       RunStateStore: class {
@@ -88,7 +127,7 @@ describe("resumeCommand - no state file", () => {
         async reset() {}
       },
     }));
-    await mock.module(MODULES.runner, () => ({ WorkflowRunner: MockWorkflowRunner }));
+    await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner, WorkflowRunner: MockWorkflowRunner }));
     await mock.module(MODULES.orchestrator, () => ({
       SprintOrchestrator: class {
         constructor() {}
@@ -141,9 +180,10 @@ describe("resumeCommand - single-sprint path (currentSprint=1)", () => {
     }));
 
     await mock.module(MODULES.config, () => ({
+      ...ORIGINAL_MODULE_EXPORTS.config,
       loadConfig: async () => fakeConfig,
     }));
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
     await mock.module(MODULES.stateManager, () => ({ SprintStatusManager: MockSprintStatusManager }));
     await mock.module(MODULES.runState, () => ({
       RunStateStore: class {
@@ -169,7 +209,7 @@ describe("resumeCommand - single-sprint path (currentSprint=1)", () => {
         async reset() {}
       },
     }));
-    await mock.module(MODULES.runner, () => ({ WorkflowRunner: MockWorkflowRunner }));
+    await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner, WorkflowRunner: MockWorkflowRunner }));
     await mock.module(MODULES.orchestrator, () => ({
       SprintOrchestrator: class {
         constructor() {}
@@ -232,9 +272,10 @@ describe("resumeCommand - multi-sprint path (currentSprint>1)", () => {
     }));
 
     await mock.module(MODULES.config, () => ({
+      ...ORIGINAL_MODULE_EXPORTS.config,
       loadConfig: async () => fakeConfig,
     }));
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
     await mock.module(MODULES.stateManager, () => ({ SprintStatusManager: MockSprintStatusManager }));
     await mock.module(MODULES.runState, () => ({
       RunStateStore: class {
@@ -260,7 +301,7 @@ describe("resumeCommand - multi-sprint path (currentSprint>1)", () => {
         async reset() {}
       },
     }));
-    await mock.module(MODULES.runner, () => ({ WorkflowRunner: MockWorkflowRunner }));
+    await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner, WorkflowRunner: MockWorkflowRunner }));
     await mock.module(MODULES.orchestrator, () => ({
       SprintOrchestrator: class {
         constructor() {}
@@ -311,9 +352,10 @@ describe("resumeCommand - multi-sprint path (currentSprint>1)", () => {
     }));
 
     await mock.module(MODULES.config, () => ({
+      ...ORIGINAL_MODULE_EXPORTS.config,
       loadConfig: async () => fakeConfig,
     }));
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
     await mock.module(MODULES.stateManager, () => ({ SprintStatusManager: MockSprintStatusManager }));
     await mock.module(MODULES.runState, () => ({
       RunStateStore: class {
@@ -339,7 +381,7 @@ describe("resumeCommand - multi-sprint path (currentSprint>1)", () => {
         async reset() {}
       },
     }));
-    await mock.module(MODULES.runner, () => ({ WorkflowRunner: MockWorkflowRunner }));
+    await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner, WorkflowRunner: MockWorkflowRunner }));
     await mock.module(MODULES.orchestrator, () => ({
       SprintOrchestrator: class {
         constructor() {}
@@ -400,9 +442,10 @@ describe("resumeCommand - backward compat (currentSprint undefined)", () => {
     }));
 
     await mock.module(MODULES.config, () => ({
+      ...ORIGINAL_MODULE_EXPORTS.config,
       loadConfig: async () => fakeConfig,
     }));
-    await mock.module(MODULES.logger, () => ({ Logger: MockLogger, LogLevel }));
+    await mock.module(MODULES.logger, () => ({ ...ORIGINAL_MODULE_EXPORTS.logger, Logger: MockLogger, LogLevel }));
     await mock.module(MODULES.stateManager, () => ({ SprintStatusManager: MockSprintStatusManager }));
     await mock.module(MODULES.runState, () => ({
       RunStateStore: class {
@@ -427,7 +470,7 @@ describe("resumeCommand - backward compat (currentSprint undefined)", () => {
         async reset() {}
       },
     }));
-    await mock.module(MODULES.runner, () => ({ WorkflowRunner: MockWorkflowRunner }));
+    await mock.module(MODULES.runner, () => ({ ...ORIGINAL_MODULE_EXPORTS.runner, WorkflowRunner: MockWorkflowRunner }));
     await mock.module(MODULES.orchestrator, () => ({
       SprintOrchestrator: class {
         constructor() {}

@@ -86,6 +86,7 @@ export async function runAllCommand(): Promise<void> {
     archiver,
     stateRepo,
     { maxSprints: config.maxSprints ?? 10 },
+    logger,
   );
 
   const result = await multiOrchestrator.runAllSprints();
