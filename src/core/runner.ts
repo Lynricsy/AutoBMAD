@@ -59,7 +59,22 @@ function truncate(text: string, maxChars: number): string {
 }
 
 function normalizeTextOutput(text: string): string {
-  return text.trim();
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+
+  // 如果整段文本本身就是合法 JSON，直接返回
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return trimmed;
+  }
+
+  // OpenCode 的 stdout 可能包含非 JSON 前缀行（如 "Auto-selected port 4097"）
+  // 从后往前找到最后一个 `{` 开头的行，提取 JSON 对象
+  const lastBrace = trimmed.lastIndexOf("\n{");
+  if (lastBrace !== -1) {
+    return trimmed.slice(lastBrace + 1);
+  }
+
+  return trimmed;
 }
 
 function hasTextMethod(value: unknown): value is { text: () => Promise<string> } {
@@ -108,10 +123,11 @@ function parseOhMyOpenCodeJson(stdoutText: string): ParseOk | ParseErr {
     return { ok: false, error: "JSON output is not an object" };
   }
 
-  const sessionId = parsed.session_id;
+  // OpenCode 输出可能是 camelCase 或 snake_case
+  const sessionId = parsed.session_id ?? parsed.sessionId;
   const success = parsed.success;
-  const durationMs = parsed.duration_ms;
-  const messageCount = parsed.message_count;
+  const durationMs = parsed.duration_ms ?? parsed.durationMs;
+  const messageCount = parsed.message_count ?? parsed.messageCount;
   const summary = parsed.summary;
 
   if (typeof sessionId !== "string") {

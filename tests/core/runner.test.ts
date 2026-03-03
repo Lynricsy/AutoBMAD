@@ -252,6 +252,76 @@ describe("WorkflowRunner", () => {
     });
   });
 
+  test("extracts JSON from mixed stdout with non-JSON prefix lines", async () => {
+    const { signals } = makeSignalsSpy();
+    const runner = new WorkflowRunner(
+      { timeout: 1_000 },
+      {
+        signals,
+        spawn: () =>
+          makeImmediateProc({
+            exitCode: 0,
+            stdoutText:
+              'Auto-selected port 4097\nServer listening at http://127.0.0.1:4097\nSession: ses_mix\n\n\nAll tasks completed.\n' +
+              okJson({
+                session_id: "ses_mix",
+                success: true,
+                duration_ms: 5000,
+                message_count: 10,
+                summary: "mixed output",
+              }),
+          }),
+      },
+    );
+
+    const result = await runner.run({
+      message: "m",
+      agent: AgentType.Hephaestus,
+      directory: "/tmp/x",
+    });
+    expect(result).toEqual({
+      sessionId: "ses_mix",
+      success: true,
+      durationMs: 5000,
+      messageCount: 10,
+      summary: "mixed output",
+    });
+  });
+
+  test("parses camelCase JSON keys from OpenCode stdout", async () => {
+    const { signals } = makeSignalsSpy();
+    const runner = new WorkflowRunner(
+      { timeout: 1_000 },
+      {
+        signals,
+        spawn: () =>
+          makeImmediateProc({
+            exitCode: 0,
+            stdoutText: JSON.stringify({
+              sessionId: "ses_camel",
+              success: true,
+              durationMs: 9999,
+              messageCount: 79,
+              summary: "camelCase output",
+            }),
+          }),
+      },
+    );
+
+    const result = await runner.run({
+      message: "m",
+      agent: AgentType.Hephaestus,
+      directory: "/tmp/x",
+    });
+    expect(result).toEqual({
+      sessionId: "ses_camel",
+      success: true,
+      durationMs: 9999,
+      messageCount: 79,
+      summary: "camelCase output",
+    });
+  });
+
   test("handles non-JSON stdout gracefully", async () => {
     const { signals } = makeSignalsSpy();
     const runner = new WorkflowRunner(
