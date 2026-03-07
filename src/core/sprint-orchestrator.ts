@@ -98,7 +98,7 @@ export class SprintOrchestrator {
       }
 
       totalStories = (await this.stateRepo.getAllStories()).size;
-      let storyIndex = 0;
+      let storyIndex = completedStories.size;
 
       if (!this.logger.silent) {
         renderSprintBanner(this.config, totalStories);
