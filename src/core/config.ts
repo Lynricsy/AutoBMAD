@@ -1,17 +1,7 @@
 import { parseArgs } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { existsSync } from "node:fs";
-
-// Define locally since types.ts is being created in parallel
-export interface AutoBMADConfig {
-  projectDir: string;
-  maxRetries: number;
-  timeout: number;
-  verbose: boolean;
-  configPath?: string;
-  prompts?: Partial<Record<string, string>>;
-  maxSprints?: number;
-}
+import type { AutoBMADConfig, SummaryConfig } from "./types.js";
 
 export const DEFAULT_CONFIG: AutoBMADConfig = {
   projectDir: process.cwd(),
@@ -27,6 +17,14 @@ interface ConfigFile {
   verbose?: boolean;
   prompts?: Record<string, string>;
   maxSprints?: number;
+  summary?: {
+    provider?: string;
+    model?: string;
+    interval?: number;
+    apiKey?: string;
+    baseURL?: string;
+    openCodeProviderName?: string;
+  };
 }
 
 /**
@@ -91,6 +89,21 @@ async function loadYamlConfig(path: string): Promise<Partial<AutoBMADConfig>> {
   if (typeof raw.verbose === "boolean") result.verbose = raw.verbose;
   if (raw.prompts && typeof raw.prompts === "object") result.prompts = raw.prompts;
   if (typeof raw.maxSprints === "number") result.maxSprints = raw.maxSprints;
+
+  if (raw.summary && typeof raw.summary === "object") {
+    const s = raw.summary;
+    if (typeof s.provider === "string" && typeof s.model === "string") {
+      const summary: SummaryConfig = {
+        provider: s.provider,
+        model: s.model,
+        ...(typeof s.interval === "number" ? { interval: s.interval } : {}),
+        ...(typeof s.apiKey === "string" ? { apiKey: s.apiKey } : {}),
+        ...(typeof s.baseURL === "string" ? { baseURL: s.baseURL } : {}),
+        ...(typeof s.openCodeProviderName === "string" ? { openCodeProviderName: s.openCodeProviderName } : {}),
+      };
+      result.summary = summary;
+    }
+  }
 
   return result;
 }

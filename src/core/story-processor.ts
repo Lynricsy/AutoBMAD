@@ -6,8 +6,10 @@ import {
   type IStateRepository,
   type IWorkflowRunner,
   type RunResult,
+  type SummaryConfig,
   type StoryResult,
 } from "./types.js";
+import { ActivitySummarizer } from "./activity-summarizer.js";
 import { getLifecycle, getWorkflowAgent } from "./router.js";
 import { renderPrompt, type WorkflowName } from "./prompts.js";
 import {
@@ -16,7 +18,11 @@ import {
   WorkflowHaltError,
 } from "./errors.js";
 import { type Logger } from "./logger.js";
-import { renderFixLoop, renderStoryProgress } from "../cli/dashboard.js";
+import {
+  renderActivitySummary,
+  renderFixLoop,
+  renderStoryProgress,
+} from "../cli/dashboard.js";
 import type { StepDisplay } from "../cli/dashboard.js";
 
 const STORY_STATUS_SET = new Set<string>(Object.values(StoryStatus));
@@ -84,6 +90,19 @@ export class StoryProcessor {
     private logger: Logger,
     private config: AutoBMADConfig,
   ) {}
+
+  protected createSummarizer(
+    summaryConfig: SummaryConfig,
+    projectDir: string,
+    renderFn: (summary: string) => void,
+  ): ActivitySummarizer {
+    return new ActivitySummarizer({
+      summaryConfig,
+      projectDir,
+      renderFn,
+      intervalMs: (summaryConfig.interval ?? 60) * 1000,
+    });
+  }
 
   async processStory(
     storyKey: string,
@@ -168,12 +187,40 @@ export class StoryProcessor {
 
     this.logger.info("Running workflow", { storyKey, workflow, agent });
 
-    const result = await this.runner.run({
-      message: prompt,
-      agent,
-      directory: this.config.projectDir,
-      timeout: this.config.timeout,
-    });
+    let summarizer: ActivitySummarizer | undefined;
+
+    if (this.config.summary) {
+      try {
+        summarizer = this.createSummarizer(
+          this.config.summary,
+          this.config.projectDir,
+          renderActivitySummary,
+        );
+        await summarizer.start();
+      } catch (_e) {
+        summarizer = undefined;
+      }
+    }
+
+    let result: RunResult;
+
+    try {
+      result = await this.runner.run({
+        message: prompt,
+        agent,
+        directory: this.config.projectDir,
+        timeout: this.config.timeout,
+        onStderr: summarizer
+          ? (chunk: string) => summarizer.handleStderrChunk(chunk)
+          : undefined,
+        verbose: !!this.config.summary,
+      });
+    } finally {
+      try {
+        summarizer?.stop();
+      } catch (_e) {
+      }
+    }
 
     if (!result.success) {
       this.logger.error("Workflow halted", {

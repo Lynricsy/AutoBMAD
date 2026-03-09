@@ -238,3 +238,48 @@ export function renderStoryComplete(
     );
   }
 }
+
+/**
+ * 渲染 Agent 活动摘要（由 LLM 定期生成）
+ */
+export function renderActivitySummary(summary: string): void {
+  const title = `  ${ANSI.bold}${ANSI.cyan}🤖 Agent Activity Summary${ANSI.reset}`;
+  const lines: string[] = [
+    boxTop(),
+    boxLine(title),
+    boxEmpty(),
+  ];
+
+  // Word-wrap summary text to fit inside box (BOX_INNER_WIDTH - 4 for padding)
+  const wrapWidth = BOX_INNER_WIDTH - 4; // 50 chars usable (2 indent + content + 2 padding)
+  const summaryLines = summary.split("\n");
+
+  for (const rawLine of summaryLines) {
+    if (rawLine.length === 0) {
+      lines.push(boxLine(""));
+      continue;
+    }
+
+    // Word wrap each line
+    const words = rawLine.split(" ");
+    let current = "  "; // 2-space indent
+
+    for (const word of words) {
+      if (current.length + word.length + 1 > wrapWidth + 2) { // +2 for indent
+        lines.push(boxLine(current));
+        current = "  " + word;
+      } else {
+        current += (current.length > 2 ? " " : "") + word;
+      }
+    }
+
+    if (current.length > 2) {
+      lines.push(boxLine(current));
+    }
+  }
+
+  lines.push(boxEmpty());
+  lines.push(boxBottom());
+
+  process.stdout.write(lines.join("\n") + "\n");
+}

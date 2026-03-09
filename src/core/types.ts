@@ -68,6 +68,8 @@ export interface RunOptions {
   agent: AgentType;
   directory: string;
   timeout?: number;
+  onStderr?: (chunk: string) => void;
+  verbose?: boolean;
 }
 
 // 故事处理结果
@@ -113,6 +115,16 @@ export interface ErrorInfo {
   stack?: string;
 }
 
+// Activity Summary 配置
+export interface SummaryConfig {
+  provider: string;       // AI SDK provider identifier: "openai" | "openai-compatible" | "anthropic" | "google"
+  model: string;          // model name to use for summaries
+  interval?: number;      // seconds between summaries (default: 60)
+  apiKey?: string;        // explicit API key (overrides openCode config)
+  baseURL?: string;       // custom base URL (required for openai-compatible)
+  openCodeProviderName?: string; // explicit OpenCode provider config key name
+}
+
 // 配置
 export interface AutoBMADConfig {
   projectDir: string;
@@ -122,6 +134,7 @@ export interface AutoBMADConfig {
   configPath?: string;
   prompts?: Partial<Record<WorkflowType, string>>;
   maxSprints?: number;
+  summary?: SummaryConfig;
 }
 
 // 运行状态（支持断点续跑）

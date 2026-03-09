@@ -30,12 +30,17 @@ interface WorkflowRunnerDeps {
 
 const DEFAULT_TIMEOUT_MS = 18_000_000;
 const SIGKILL_GRACE_MS = 5_000;
+const MAX_STDERR_BUFFER = 100 * 1024;
 
-export function buildOhMyOpenCodeRunCommand(options: RunOptions): string[] {
+export function buildOhMyOpenCodeRunCommand(options: RunOptions, summaryEnabled?: boolean): string[] {
   const cmd = ["oh-my-opencode", "run", "--agent", options.agent];
 
   if (options.directory) {
     cmd.push("--directory", options.directory);
+  }
+
+  if (summaryEnabled === true) {
+    cmd.push("--verbose");
   }
 
   cmd.push("--json", options.message);
@@ -81,6 +86,14 @@ function hasTextMethod(value: unknown): value is { text: () => Promise<string> }
   return isRecord(value) && typeof (value as { text?: unknown }).text === "function";
 }
 
+function appendCappedText(buffer: string, chunk: string, maxChars: number): string {
+  if (!chunk || buffer.length >= maxChars) {
+    return buffer;
+  }
+
+  return buffer + chunk.slice(0, maxChars - buffer.length);
+}
+
 async function readSubprocessText(stream: unknown): Promise<string> {
   if (!stream) return "";
   if (typeof stream === "number") return "";
@@ -94,6 +107,46 @@ async function readSubprocessText(stream: unknown): Promise<string> {
   }
 
   return "";
+}
+
+async function readStreamingStderr(
+  stream: unknown,
+  onStderr: (chunk: string) => void,
+): Promise<string> {
+  if (!(stream instanceof ReadableStream)) {
+    const stderrText = await readSubprocessText(stream);
+    if (stderrText) {
+      onStderr(stderrText);
+    }
+    return stderrText.slice(0, MAX_STDERR_BUFFER);
+  }
+
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let stderrBuffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      if (!chunk) continue;
+
+      onStderr(chunk);
+      stderrBuffer = appendCappedText(stderrBuffer, chunk, MAX_STDERR_BUFFER);
+    }
+
+    const trailingChunk = decoder.decode();
+    if (trailingChunk) {
+      onStderr(trailingChunk);
+      stderrBuffer = appendCappedText(stderrBuffer, trailingChunk, MAX_STDERR_BUFFER);
+    }
+
+    return stderrBuffer;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 type ParseOk = {
@@ -208,7 +261,7 @@ export class WorkflowRunner implements IWorkflowRunner {
     const startedAt = this.deps.now();
     const timeoutMs = options.timeout ?? this.defaultTimeout ?? DEFAULT_TIMEOUT_MS;
 
-    const cmd = buildOhMyOpenCodeRunCommand(options);
+    const cmd = buildOhMyOpenCodeRunCommand(options, options.verbose);
 
     let proc: SubprocessLike;
     try {
@@ -223,6 +276,10 @@ export class WorkflowRunner implements IWorkflowRunner {
         summary: `Failed to spawn process: ${formatError(err)}`,
       });
     }
+
+    const stderrReadPromise = options.onStderr
+      ? readStreamingStderr(proc.stderr, options.onStderr)
+      : undefined;
 
     let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
     let terminateRequested = false;
@@ -274,6 +331,13 @@ export class WorkflowRunner implements IWorkflowRunner {
         await proc.exited;
         clearKillEscalation();
 
+        if (stderrReadPromise) {
+          try {
+            await stderrReadPromise;
+          } catch {
+          }
+        }
+
         return makeFailureResult({
           durationMs: this.deps.now() - startedAt,
           summary: "Process timed out",
@@ -282,9 +346,11 @@ export class WorkflowRunner implements IWorkflowRunner {
 
       clearKillEscalation();
 
+      const stderrTextPromise = stderrReadPromise ?? readSubprocessText(proc.stderr);
+
       const [stdoutText, stderrText] = await Promise.all([
         readSubprocessText(proc.stdout),
-        readSubprocessText(proc.stderr),
+        stderrTextPromise,
       ]);
 
       const parsed = parseOhMyOpenCodeJson(stdoutText);
@@ -335,6 +401,13 @@ export class WorkflowRunner implements IWorkflowRunner {
       } catch {
       }
       clearKillEscalation();
+
+      if (stderrReadPromise) {
+        try {
+          await stderrReadPromise;
+        } catch {
+        }
+      }
 
       return makeFailureResult({
         durationMs: this.deps.now() - startedAt,
