@@ -33,12 +33,23 @@ describe("config summary parsing", () => {
     });
   });
 
-  test("config without summary leaves summary undefined", async () => {
-    writeFileSync(join(tmpDir, ".autobmad.yaml"), "maxRetries: 5\nverbose: true\n");
+  test("summary: false explicitly disables auto-detection", async () => {
+    writeFileSync(join(tmpDir, ".autobmad.yaml"), "summary: false\n");
 
     const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir]);
 
-    expect(config.summary).toBeUndefined();
+    expect(config.summary).toBeNull();
+  });
+
+  test("summary: true triggers auto-detection from OpenCode", async () => {
+    writeFileSync(join(tmpDir, ".autobmad.yaml"), "summary: true\n");
+
+    const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir]);
+
+    if (config.summary) {
+      expect(config.summary.provider).toBeString();
+      expect(config.summary.model).toBeString();
+    }
   });
 
   test("ignores summary blocks missing required provider or model", async () => {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readOpenCodeConfig, resolveOpenCodeCredentials, stripJsonComments } from "../../src/core/llm-client.js";
+import { readOpenCodeConfig, resolveOpenCodeCredentials, resolveSmallModel, stripJsonComments } from "../../src/core/llm-client.js";
 import type { SummaryConfig } from "../../src/core/types.js";
 
 describe("stripJsonComments", () => {
@@ -159,5 +159,88 @@ describe("resolveOpenCodeCredentials", () => {
     };
 
     expect(resolveOpenCodeCredentials(openAIConfig, openCodeConfig)).toEqual({});
+  });
+});
+
+describe("resolveSmallModel", () => {
+  test("resolves valid small_model with npm-based provider", () => {
+    const openCodeConfig = {
+      small_model: "Google/gemini-3-flash-preview",
+      provider: {
+        Google: {
+          npm: "@ai-sdk/google",
+          options: {
+            apiKey: "google-key",
+            baseURL: "https://example.com/v1beta",
+          },
+        },
+      },
+    };
+
+    expect(resolveSmallModel(openCodeConfig)).toEqual({
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      apiKey: "google-key",
+      baseURL: "https://example.com/v1beta",
+      openCodeProviderName: "Google",
+    });
+  });
+
+  test("resolves valid small_model with id-based provider", () => {
+    const openCodeConfig = {
+      small_model: "my-openai/gpt-4o-mini",
+      provider: {
+        "my-openai": {
+          id: "openai",
+          options: {
+            apiKey: "openai-key",
+          },
+        },
+      },
+    };
+
+    expect(resolveSmallModel(openCodeConfig)).toEqual({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      apiKey: "openai-key",
+      openCodeProviderName: "my-openai",
+    });
+  });
+
+  test("returns null when small_model is missing", () => {
+    expect(resolveSmallModel({ provider: {} })).toBeNull();
+  });
+
+  test("returns null when small_model has no slash", () => {
+    expect(resolveSmallModel({ small_model: "noSlash", provider: {} })).toBeNull();
+  });
+
+  test("returns null when provider entry not found", () => {
+    const openCodeConfig = {
+      small_model: "Missing/some-model",
+      provider: {
+        Other: { id: "openai", options: {} },
+      },
+    };
+
+    expect(resolveSmallModel(openCodeConfig)).toBeNull();
+  });
+
+  test("returns null for null/undefined input", () => {
+    expect(resolveSmallModel(null)).toBeNull();
+    expect(resolveSmallModel(undefined)).toBeNull();
+  });
+
+  test("returns null when provider has no recognizable id or npm", () => {
+    const openCodeConfig = {
+      small_model: "Custom/model",
+      provider: {
+        Custom: {
+          options: { apiKey: "key" },
+        },
+      },
+    };
+
+    expect(resolveSmallModel(openCodeConfig)).toBeNull();
   });
 });

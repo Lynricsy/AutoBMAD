@@ -134,7 +134,7 @@ export interface AutoBMADConfig {
   configPath?: string;
   prompts?: Partial<Record<WorkflowType, string>>;
   maxSprints?: number;
-  summary?: SummaryConfig;
+  summary?: SummaryConfig | null;  // null = 用户显式禁用, undefined = 未设置(可自动检测)
 }
 
 // 运行状态（支持断点续跑）

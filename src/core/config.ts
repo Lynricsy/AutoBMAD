@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { existsSync } from "node:fs";
 import type { AutoBMADConfig, SummaryConfig } from "./types.js";
+import { resolveSmallModel } from "./llm-client.js";
 
 export const DEFAULT_CONFIG: AutoBMADConfig = {
   projectDir: process.cwd(),
@@ -17,7 +18,7 @@ interface ConfigFile {
   verbose?: boolean;
   prompts?: Record<string, string>;
   maxSprints?: number;
-  summary?: {
+  summary?: boolean | {
     provider?: string;
     model?: string;
     interval?: number;
@@ -90,7 +91,14 @@ async function loadYamlConfig(path: string): Promise<Partial<AutoBMADConfig>> {
   if (raw.prompts && typeof raw.prompts === "object") result.prompts = raw.prompts;
   if (typeof raw.maxSprints === "number") result.maxSprints = raw.maxSprints;
 
-  if (raw.summary && typeof raw.summary === "object") {
+  if (raw.summary === false) {
+    result.summary = null;
+  } else if (raw.summary === true) {
+    const autoConfig = resolveSmallModel();
+    if (autoConfig) {
+      result.summary = autoConfig;
+    }
+  } else if (raw.summary && typeof raw.summary === "object") {
     const s = raw.summary;
     if (typeof s.provider === "string" && typeof s.model === "string") {
       const summary: SummaryConfig = {
@@ -149,6 +157,13 @@ export async function loadConfig(argv?: string[]): Promise<AutoBMADConfig> {
     // Always carry configPath from CLI (may be undefined)
     configPath: cliArgs.configPath,
   };
+
+  if (merged.summary === undefined) {
+    const autoConfig = resolveSmallModel();
+    if (autoConfig) {
+      merged.summary = autoConfig;
+    }
+  }
 
   // Validate: projectDir must exist
   if (!existsSync(merged.projectDir)) {

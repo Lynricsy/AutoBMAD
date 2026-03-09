@@ -146,6 +146,61 @@ export function createProvider(config: SummaryConfig, openCodeConfig?: any): Lan
   }
 }
 
+/**
+ * 从 OpenCode 的 small_model 字段自动解析 SummaryConfig。
+ * small_model 格式: "ProviderName/modelId" (如 "Google/gemini-3-flash-preview")
+ * 自动查找 provider 段获取 AI SDK 类型和凭据。
+ */
+export function resolveSmallModel(openCodeConfig?: any): SummaryConfig | null {
+  const config = openCodeConfig ?? readOpenCodeConfig();
+
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return null;
+  }
+
+  const smallModel = (config as Record<string, unknown>).small_model;
+
+  if (typeof smallModel !== "string") {
+    return null;
+  }
+
+  const slashIdx = smallModel.indexOf("/");
+
+  if (slashIdx <= 0 || slashIdx === smallModel.length - 1) {
+    return null;
+  }
+
+  const providerName = smallModel.substring(0, slashIdx);
+  const modelId = smallModel.substring(slashIdx + 1);
+
+  const providers = (config as OpenCodeConfig).provider;
+
+  if (!providers || typeof providers !== "object") {
+    return null;
+  }
+
+  const entry = providers[providerName];
+
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const providerId = inferProviderId(entry);
+
+  if (!providerId) {
+    return null;
+  }
+
+  const creds = extractCredentials(entry);
+
+  return {
+    provider: providerId,
+    model: modelId,
+    ...creds,
+    openCodeProviderName: providerName,
+  };
+}
+
 export class LLMClient {
   private readonly config: SummaryConfig;
   private provider: LanguageModelV1 | null = null;
