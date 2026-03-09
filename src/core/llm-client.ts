@@ -182,8 +182,7 @@ export class LLMClient {
 
       return result.text;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return `[Summary generation failed: ${message}]`;
+      throw error;
     }
   }
 }
