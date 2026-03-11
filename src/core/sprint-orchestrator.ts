@@ -358,7 +358,10 @@ export class SprintOrchestrator {
       const state = await this.runState.load();
       await this.runState.save(state);
     } catch (e) {
-      console.error("[AutoBMAD] Failed to flush run state on interrupt:", e instanceof Error ? e.message : String(e));
+      this.logger.error("Failed to flush run state on interrupt", {
+        event: "sigint-flush-failed",
+        error: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       process.exit(1);
     }

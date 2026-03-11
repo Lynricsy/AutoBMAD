@@ -555,7 +555,7 @@ describe("SprintOrchestrator", () => {
     expect(updateCalls).toEqual([{ storyKey: story1, status: StoryStatus.Done }]);
   });
 
-  test("SIGINT handler calls console.error when flush save fails", async () => {
+  test("SIGINT handler calls logger.error when flush save fails", async () => {
     const { repo } = makeInMemoryStateRepo([
       { storyKey: "0-1-sig", status: StoryStatus.Backlog },
     ]);
@@ -563,7 +563,6 @@ describe("SprintOrchestrator", () => {
     const { store: runState } = makeRunStateStore();
 
     const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
-    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
 
     let resolveRun!: (value: RunResult) => void;
     const runner: IWorkflowRunner = {
@@ -574,11 +573,13 @@ describe("SprintOrchestrator", () => {
       },
     };
 
+    const logger = new StubLogger();
+
     const orchestrator = new SprintOrchestrator(
       repo,
       runner,
       runState,
-      new StubLogger(),
+      logger,
       makeConfig(),
     );
 
@@ -597,14 +598,13 @@ describe("SprintOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[AutoBMAD] Failed to flush run state on interrupt:",
-      "disk full",
-    );
+    expect(logger.errors).toContainEqual({
+      message: "Failed to flush run state on interrupt",
+      data: { event: "sigint-flush-failed", error: "disk full" },
+    });
     expect(exitSpy).toHaveBeenCalledWith(1);
 
     exitSpy.mockRestore();
-    errorSpy.mockRestore();
 
     process.removeAllListeners("SIGINT");
     resolveRun(okResult("cleanup"));
