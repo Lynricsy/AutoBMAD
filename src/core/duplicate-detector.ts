@@ -1,4 +1,4 @@
-const STORY_KEY_RE = /^\d+-\d+-/;
+const STORY_KEY_RE = /^\d+-\d+[a-zA-Z]*-/;
 
 export interface DuplicateResult {
   isDuplicate: boolean;

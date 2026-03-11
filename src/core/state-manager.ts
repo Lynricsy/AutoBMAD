@@ -3,7 +3,7 @@ import { renameSync, writeFileSync } from "node:fs";
 import { type IStateRepository, type SprintStatusData, StoryStatus } from "./types.js";
 import { StateCorruptionError } from "./errors.js";
 
-const STORY_KEY_RE = /^\d+-\d+-/;
+const STORY_KEY_RE = /^\d+-\d+[a-zA-Z]*-/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
