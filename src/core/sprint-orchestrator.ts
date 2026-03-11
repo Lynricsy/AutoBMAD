@@ -310,7 +310,8 @@ export class SprintOrchestrator {
     try {
       const state = await this.runState.load();
       await this.runState.save(state);
-    } catch {
+    } catch (e) {
+      console.error("[AutoBMAD] Failed to flush run state on interrupt:", (e as Error).message);
     } finally {
       process.exit(1);
     }

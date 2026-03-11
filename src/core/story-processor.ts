@@ -223,7 +223,11 @@ export class StoryProcessor {
     } finally {
       try {
         summarizer?.stop();
-      } catch (_e) {
+      } catch (e) {
+        this.logger.warn("Failed to stop summarizer", {
+          event: "summarizer-stop-failed",
+          error: (e as Error).message,
+        });
       }
     }
 

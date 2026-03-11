@@ -32,16 +32,23 @@ function makeRunState(overrides: Partial<RunState> = {}): RunState {
 
 function makeRunStateStore(initial: RunState) {
   let state = structuredClone(initial);
+  const operations: string[] = [];
 
-  const load = mock(async () => structuredClone(state));
+  const load = mock(async () => {
+    operations.push("load");
+    return structuredClone(state);
+  });
   const save = mock(async (next: RunState) => {
+    operations.push(`save:${next.currentSprint ?? "none"}`);
     state = structuredClone(next);
   });
 
   const setCurrentSprint = mock((sprint: number) => {
+    operations.push(`setCurrentSprint:${sprint}`);
     state.currentSprint = sprint;
   });
   const reset = mock(async () => {
+    operations.push("reset");
     state = makeRunState({ currentSprint: 1 });
   });
 
@@ -60,6 +67,7 @@ function makeRunStateStore(initial: RunState) {
   return {
     store,
     getState: () => state,
+    operations,
     load,
     save,
     setCurrentSprint,
@@ -344,11 +352,75 @@ describe("MultiSprintOrchestrator", () => {
     const result = await multi.runAllSprints();
 
     expect(result.sprintResults.map((r) => r.status)).toEqual(["failed", "complete"]);
-    expect(archiver.archive.mock.calls.map((c) => c[0])).toEqual([2]);
-    expect(runState.reset.mock.calls).toHaveLength(1);
+    expect(archiver.archive.mock.calls.map((c) => c[0])).toEqual([1, 2]);
+    expect(runState.reset.mock.calls).toHaveLength(2);
     expect(warnSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n")).toContain(
-      "Sprint 1 failed, skipping to next",
+      "Sprint failed, resetting state",
     );
+  });
+
+  test("failed sprint resets state before advancing to next sprint", async () => {
+    const orchestrator = makeOrchestrator([failedResult(), pausedResult()]);
+    const runState = makeRunStateStore(
+      makeRunState({ currentSprint: 1, completedStories: ["1-1-leaked-story"] }),
+    );
+    const archiver = makeArchiver();
+    const stateRepo = makeStateRepo([[]]);
+    const config = { maxSprints: 2 };
+    const logger = makeSilentLogger();
+    const warnSpy = spyOn(logger, "warn");
+
+    const multi = new MultiSprintOrchestrator(
+          orchestrator,
+          runState.store,
+          archiver,
+          stateRepo.repo,
+          config,
+          logger,
+        );
+
+    await multi.runAllSprints();
+
+    expect(runState.operations).toContain("reset");
+    expect(runState.operations.indexOf("reset")).toBeLessThan(
+      runState.operations.indexOf("setCurrentSprint:2"),
+    );
+    expect(runState.getState().completedStories).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith("Sprint failed, resetting state", {
+      event: "sprint-failed-reset",
+      sprint: 1,
+    });
+  });
+
+  test("archive failure on failed sprint does not block reset or next sprint", async () => {
+    const orchestrator = makeOrchestrator([failedResult(), completeResult()]);
+    const runState = makeRunStateStore(makeRunState({ currentSprint: 1 }));
+    const archive = mock(async (sprint: number) => {
+      if (sprint === 1) {
+        throw new Error("archive exploded");
+      }
+    });
+    const stateRepo = makeStateRepo([[], ["2-1-ok"]]);
+    const config = { maxSprints: 2 };
+
+    const multi = new MultiSprintOrchestrator(
+          orchestrator,
+          runState.store,
+          { archive },
+          stateRepo.repo,
+          config,
+          makeSilentLogger(),
+        );
+
+    const result = await multi.runAllSprints();
+
+    expect(result.sprintResults.map((entry) => entry.status)).toEqual(["failed", "complete"]);
+    expect(archive.mock.calls.map((call) => call[0])).toEqual([1, 2]);
+    expect(runState.operations).toContain("reset");
+    expect(runState.operations.indexOf("reset")).toBeLessThan(
+      runState.operations.indexOf("setCurrentSprint:2"),
+    );
+    expect(runState.reset.mock.calls).toHaveLength(2);
   });
 
   test("status='paused' -> stop loop and return partial result", async () => {
