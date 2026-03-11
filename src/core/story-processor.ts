@@ -1,4 +1,5 @@
 import {
+  type LifecycleStep,
   StoryStatus,
   WorkflowType,
   type AutoBMADConfig,
@@ -10,7 +11,7 @@ import {
   type StoryResult,
 } from "./types.js";
 import { ActivitySummarizer } from "./activity-summarizer.js";
-import { getLifecycle, getWorkflowAgent } from "./router.js";
+import { getLifecycle, getWorkflowAgent, validateTransition } from "./router.js";
 import { renderPrompt, type WorkflowName } from "./prompts.js";
 import {
   MaxRetriesExceededError,
@@ -115,42 +116,59 @@ export class StoryProcessor {
 
     const customPrompts = normalizeCustomPrompts(this.config.prompts);
     let status = await this.readStoryStatus(storyKey);
+    let lifecycle: LifecycleStep[];
 
-    try {
-      const lifecycle = getLifecycle(status);
-      const steps: StepDisplay[] = lifecycle.map((step) => ({
-        workflow: step.workflow,
-        status: "pending" as const,
-      }));
-
-      for (let i = 0; i < lifecycle.length; i += 1) {
-        const step = lifecycle[i]!;
-
-        steps[i].status = "running";
-        if (!this.logger.silent) {
-          renderStoryProgress(storyKey, storyIndex, totalStories, steps);
+    while (true) {
+      try {
+        lifecycle = getLifecycle(status);
+        break;
+      } catch (err) {
+        if (!(err instanceof StoryCompleteError)) {
+          throw err;
         }
 
-        await this.runWorkflow(storyKey, step.workflow, customPrompts);
-
-        steps[i].status = "completed";
-        if (!this.logger.silent) {
-          renderStoryProgress(storyKey, storyIndex, totalStories, steps);
+        if (this.runState.hasCompletedWorkflow(storyKey, WorkflowType.CodeReview)) {
+          const durationMs = Date.now() - startedAt;
+          this.runState.markComplete(storyKey);
+          return { storyKey, success: true, retries: 0, durationMs };
         }
 
-        status = await this.readStoryStatus(storyKey);
-
-        if (step.workflow === WorkflowType.CodeReview) {
-          status = await this.runFixLoopIfNeeded(storyKey, status, customPrompts);
-        }
+        await this.updateStatusWithValidation(storyKey, status, StoryStatus.Review);
+        this.logger.warn("premature-completion-prevented", {
+          event: "premature-completion-prevented",
+          storyKey,
+          fromStatus: status,
+          toStatus: StoryStatus.Review,
+        });
+        status = StoryStatus.Review;
       }
-    } catch (err) {
-      if (err instanceof StoryCompleteError) {
-        const durationMs = Date.now() - startedAt;
-        this.runState.markComplete(storyKey);
-        return { storyKey, success: true, retries: 0, durationMs };
+    }
+
+    const steps: StepDisplay[] = lifecycle.map((step) => ({
+      workflow: step.workflow,
+      status: "pending" as const,
+    }));
+
+    for (let i = 0; i < lifecycle.length; i += 1) {
+      const step = lifecycle[i]!;
+
+      steps[i].status = "running";
+      if (!this.logger.silent) {
+        renderStoryProgress(storyKey, storyIndex, totalStories, steps);
       }
-      throw err;
+
+      await this.runWorkflowAndRecord(storyKey, step.workflow, customPrompts);
+
+      steps[i].status = "completed";
+      if (!this.logger.silent) {
+        renderStoryProgress(storyKey, storyIndex, totalStories, steps);
+      }
+
+      status = await this.readStoryStatus(storyKey);
+
+      if (step.workflow === WorkflowType.CodeReview) {
+        status = await this.runFixLoopIfNeeded(storyKey, status, customPrompts);
+      }
     }
 
     const durationMs = Date.now() - startedAt;
@@ -253,6 +271,33 @@ export class StoryProcessor {
     return result;
   }
 
+  private async runWorkflowAndRecord(
+    storyKey: string,
+    workflow: WorkflowType,
+    customPrompts?: Partial<Record<WorkflowName, string>>,
+  ): Promise<RunResult> {
+    const result = await this.runWorkflow(storyKey, workflow, customPrompts);
+    this.runState.recordWorkflow(storyKey, workflow);
+    return result;
+  }
+
+  private async updateStatusWithValidation(
+    storyKey: string,
+    currentStatus: StoryStatus,
+    newStatus: StoryStatus,
+  ): Promise<void> {
+    if (!validateTransition(currentStatus, newStatus)) {
+      this.logger.warn("Invalid status transition detected", {
+        event: "invalid-status-transition",
+        storyKey,
+        fromStatus: currentStatus,
+        toStatus: newStatus,
+      });
+    }
+
+    await this.stateRepo.updateStatus(storyKey, newStatus);
+  }
+
   private async runFixLoopIfNeeded(
     storyKey: string,
     statusAfterReview: StoryStatus,
@@ -261,10 +306,40 @@ export class StoryProcessor {
     let status = statusAfterReview;
 
     while (status !== StoryStatus.Done) {
+      const currentStatus = await this.readStoryStatus(storyKey);
+
+      if (currentStatus === StoryStatus.Done) {
+        status = currentStatus;
+        break;
+      }
+
+      if (currentStatus !== StoryStatus.InProgress && currentStatus !== StoryStatus.Review) {
+        await this.updateStatusWithValidation(
+          storyKey,
+          currentStatus,
+          StoryStatus.NeedsHumanIntervention,
+        );
+        this.logger.error("Unexpected story status during fix loop", {
+          event: "unexpected-fix-loop-status",
+          storyKey,
+          status: currentStatus,
+        });
+        throw new WorkflowHaltError(
+          storyKey,
+          WorkflowType.CodeReview,
+          `Unexpected story status in fix loop: ${currentStatus}`,
+        );
+      }
+
+      status = currentStatus;
       const retries = this.runState.getRetryCount(storyKey);
 
       if (retries >= this.config.maxRetries) {
-        await this.stateRepo.updateStatus(storyKey, StoryStatus.NeedsHumanIntervention);
+        await this.updateStatusWithValidation(
+          storyKey,
+          status,
+          StoryStatus.NeedsHumanIntervention,
+        );
 
         this.logger.error("Max retries exceeded; marking needs-human-intervention", {
           storyKey,
@@ -294,10 +369,10 @@ export class StoryProcessor {
 
       this.runState.incrementRetry(storyKey);
 
-      await this.runWorkflow(storyKey, WorkflowType.DevStory, customPrompts);
+      await this.runWorkflowAndRecord(storyKey, WorkflowType.DevStory, customPrompts);
       status = await this.readStoryStatus(storyKey);
 
-      await this.runWorkflow(storyKey, WorkflowType.CodeReview, customPrompts);
+      await this.runWorkflowAndRecord(storyKey, WorkflowType.CodeReview, customPrompts);
       status = await this.readStoryStatus(storyKey);
     }
 

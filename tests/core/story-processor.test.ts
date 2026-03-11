@@ -19,6 +19,12 @@ import { MaxRetriesExceededError, WorkflowHaltError } from "../../src/core/error
 import { Logger, LogLevel } from "../../src/core/logger.js";
 
 class StubLogger extends Logger {
+  readonly entries: Array<{
+    level: "debug" | "info" | "warn" | "error" | "fatal";
+    message: string;
+    data?: Record<string, unknown>;
+  }> = [];
+
   constructor() {
     super("story-processor-test", {
       level: LogLevel.Debug,
@@ -27,11 +33,21 @@ class StubLogger extends Logger {
     });
   }
 
-  debug(_message: string, _data?: Record<string, unknown>): void {}
-  info(_message: string, _data?: Record<string, unknown>): void {}
-  warn(_message: string, _data?: Record<string, unknown>): void {}
-  error(_message: string, _data?: Record<string, unknown>): void {}
-  fatal(_message: string, _data?: Record<string, unknown>): void {}
+  debug(message: string, data?: Record<string, unknown>): void {
+    this.entries.push({ level: "debug", message, data });
+  }
+  info(message: string, data?: Record<string, unknown>): void {
+    this.entries.push({ level: "info", message, data });
+  }
+  warn(message: string, data?: Record<string, unknown>): void {
+    this.entries.push({ level: "warn", message, data });
+  }
+  error(message: string, data?: Record<string, unknown>): void {
+    this.entries.push({ level: "error", message, data });
+  }
+  fatal(message: string, data?: Record<string, unknown>): void {
+    this.entries.push({ level: "fatal", message, data });
+  }
 }
 
 function makeSprintStatusData(storyKey: string, status: StoryStatus): SprintStatusData {
@@ -130,10 +146,20 @@ function makeRunnerSequence(results: RunResult[]) {
   return { runner, callHistory, getRunCount: () => runIdx };
 }
 
-function makeRunStateStore() {
+function makeRunStateStore(options: {
+  completedWorkflows?: Record<string, WorkflowType[]>;
+} = {}) {
   const retries: Record<string, number> = {};
   const errors: ErrorInfo[] = [];
   const completedStories: string[] = [];
+  const completedWorkflows: Record<string, WorkflowType[]> = Object.fromEntries(
+    Object.entries(options.completedWorkflows ?? {}).map(([storyKey, workflows]) => [
+      storyKey,
+      [...workflows],
+    ]),
+  );
+  const recordWorkflowCalls: Array<{ storyKey: string; workflow: WorkflowType }> = [];
+  const operations: string[] = [];
   let loadCalls = 0;
   let incrementCalls = 0;
   let markCompleteCalls = 0;
@@ -149,6 +175,7 @@ function makeRunStateStore() {
         startedAt: now,
         lastUpdatedAt: now,
         completedStories,
+        completedWorkflows,
       };
     },
 
@@ -160,8 +187,27 @@ function makeRunStateStore() {
 
     incrementRetry(storyKey: string): void {
       incrementCalls += 1;
+      operations.push(`increment:${storyKey}`);
       const current = retries[storyKey] ?? 0;
       retries[storyKey] = current + 1;
+    },
+
+    recordWorkflow(storyKey: string, workflow: WorkflowType): void {
+      recordWorkflowCalls.push({ storyKey, workflow });
+      operations.push(`record:${storyKey}:${workflow}`);
+      const completed = completedWorkflows[storyKey] ?? [];
+      if (!completed.includes(workflow)) {
+        completed.push(workflow);
+        completedWorkflows[storyKey] = completed;
+      }
+    },
+
+    getCompletedWorkflows(storyKey: string): WorkflowType[] {
+      return [...(completedWorkflows[storyKey] ?? [])];
+    },
+
+    hasCompletedWorkflow(storyKey: string, workflow: WorkflowType): boolean {
+      return (completedWorkflows[storyKey] ?? []).includes(workflow);
     },
 
     setError(error: ErrorInfo): void {
@@ -172,6 +218,7 @@ function makeRunStateStore() {
 
     markComplete(storyKey: string): void {
       markCompleteCalls += 1;
+      operations.push(`complete:${storyKey}`);
       if (!completedStories.includes(storyKey)) completedStories.push(storyKey);
       delete retries[storyKey];
     },
@@ -185,6 +232,9 @@ function makeRunStateStore() {
     store,
     errors,
     completedStories,
+    completedWorkflows,
+    recordWorkflowCalls,
+    operations,
     getLoadCalls: () => loadCalls,
     getIncrementCalls: () => incrementCalls,
     getMarkCompleteCalls: () => markCompleteCalls,
@@ -258,6 +308,43 @@ describe("StoryProcessor", () => {
     expect(callHistory[2]?.message).toContain("code-review");
   });
 
+  test("records workflows after each successful runWorkflow", async () => {
+    const { repo } = makeStateRepoSequence({
+      storyKey,
+      statuses: [
+        StoryStatus.Backlog,
+        StoryStatus.ReadyForDev,
+        StoryStatus.Review,
+        StoryStatus.Done,
+      ],
+    });
+
+    const { runner } = makeRunnerSequence([
+      okResult("create"),
+      okResult("dev"),
+      okResult("review"),
+    ]);
+
+    const { store: runState, recordWorkflowCalls, operations } = makeRunStateStore();
+
+    const logger = new StubLogger();
+    const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
+
+    await processor.processStory(storyKey, 1, 3);
+
+    expect(recordWorkflowCalls).toEqual([
+      { storyKey, workflow: WorkflowType.CreateStory },
+      { storyKey, workflow: WorkflowType.DevStory },
+      { storyKey, workflow: WorkflowType.CodeReview },
+    ]);
+    expect(operations).toEqual([
+      `record:${storyKey}:${WorkflowType.CreateStory}`,
+      `record:${storyKey}:${WorkflowType.DevStory}`,
+      `record:${storyKey}:${WorkflowType.CodeReview}`,
+      `complete:${storyKey}`,
+    ]);
+  });
+
   test("Fix Loop Success: code-review leaves story not done, retry dev+review, then done", async () => {
     const { repo, updateCalls, getReadCount } = makeStateRepoSequence({
       storyKey,
@@ -265,6 +352,7 @@ describe("StoryProcessor", () => {
         StoryStatus.Backlog,
         StoryStatus.ReadyForDev,
         StoryStatus.Review,
+        StoryStatus.InProgress,
         StoryStatus.InProgress,
         StoryStatus.Review,
         StoryStatus.Done,
@@ -288,7 +376,7 @@ describe("StoryProcessor", () => {
 
     expect(result.success).toBe(true);
     expect(result.retries).toBe(1);
-    expect(getReadCount()).toBe(6);
+    expect(getReadCount()).toBe(7);
     expect(getRunCount()).toBe(5);
     expect(updateCalls).toHaveLength(0);
     expect(getIncrementCalls()).toBe(1);
@@ -316,9 +404,12 @@ describe("StoryProcessor", () => {
         StoryStatus.InProgress,
         StoryStatus.Review,
         StoryStatus.InProgress,
-        StoryStatus.Review,
         StoryStatus.InProgress,
         StoryStatus.Review,
+        StoryStatus.InProgress,
+        StoryStatus.InProgress,
+        StoryStatus.Review,
+        StoryStatus.InProgress,
         StoryStatus.InProgress,
       ],
     });
@@ -348,7 +439,7 @@ describe("StoryProcessor", () => {
       }
     }
 
-    expect(getReadCount()).toBe(7);
+    expect(getReadCount()).toBe(10);
     expect(getRunCount()).toBe(6);
     expect(getIncrementCalls()).toBe(2);
     expect(getMarkCompleteCalls()).toBe(0);
@@ -413,14 +504,49 @@ describe("StoryProcessor", () => {
     });
   });
 
-  test("Story already done is handled gracefully (no runner calls)", async () => {
+  test("StoryCompleteError without completed code-review resets to review and continues", async () => {
+    const { repo, updateCalls } = makeStateRepoSequence({
+      storyKey,
+      statuses: [StoryStatus.Done, StoryStatus.Done],
+    });
+
+    const { runner, getRunCount } = makeRunnerSequence([okResult("review")]);
+    const { store: runState, getMarkCompleteCalls } = makeRunStateStore();
+
+    const logger = new StubLogger();
+    const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
+
+    const result = await processor.processStory(storyKey, 1, 3);
+
+    expect(result.success).toBe(true);
+    expect(result.retries).toBe(0);
+    expect(getRunCount()).toBe(1);
+    expect(getMarkCompleteCalls()).toBe(1);
+    expect(updateCalls).toEqual([{ storyKey, status: StoryStatus.Review }]);
+    expect(logger.entries).toContainEqual({
+      level: "warn",
+      message: "premature-completion-prevented",
+      data: {
+        event: "premature-completion-prevented",
+        storyKey,
+        fromStatus: StoryStatus.Done,
+        toStatus: StoryStatus.Review,
+      },
+    });
+  });
+
+  test("StoryCompleteError with completed code-review marks complete immediately", async () => {
     const { repo, updateCalls, getReadCount } = makeStateRepoSequence({
       storyKey,
       statuses: [StoryStatus.Done],
     });
 
-    const { runner, callHistory, getRunCount } = makeRunnerSequence([]);
-    const { store: runState, getMarkCompleteCalls } = makeRunStateStore();
+    const { runner, getRunCount } = makeRunnerSequence([]);
+    const { store: runState, getMarkCompleteCalls } = makeRunStateStore({
+      completedWorkflows: {
+        [storyKey]: [WorkflowType.CodeReview],
+      },
+    });
 
     const logger = new StubLogger();
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
@@ -431,8 +557,109 @@ describe("StoryProcessor", () => {
     expect(result.retries).toBe(0);
     expect(getReadCount()).toBe(1);
     expect(getRunCount()).toBe(0);
-    expect(callHistory).toHaveLength(0);
     expect(updateCalls).toHaveLength(0);
     expect(getMarkCompleteCalls()).toBe(1);
   });
+
+  test("unexpected status in fix loop sets needs-human-intervention and throws", async () => {
+    const { repo, updateCalls } = makeStateRepoSequence({
+      storyKey,
+      statuses: [
+        StoryStatus.InProgress,
+        StoryStatus.Review,
+        StoryStatus.Backlog,
+        StoryStatus.Backlog,
+      ],
+    });
+
+    const { runner } = makeRunnerSequence([okResult("dev"), okResult("review")]);
+    const { store: runState } = makeRunStateStore();
+
+    const logger = new StubLogger();
+    const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
+
+    await expect(processor.processStory(storyKey, 1, 3)).rejects.toBeInstanceOf(WorkflowHaltError);
+
+    expect(updateCalls).toEqual([
+      { storyKey, status: StoryStatus.NeedsHumanIntervention },
+    ]);
+    expect(logger.entries).toContainEqual({
+      level: "error",
+      message: "Unexpected story status during fix loop",
+      data: {
+        event: "unexpected-fix-loop-status",
+        storyKey,
+        status: StoryStatus.Backlog,
+      },
+    });
+  });
+
+  test("valid status in fix loop proceeds normally", async () => {
+    const { repo, updateCalls, getReadCount } = makeStateRepoSequence({
+      storyKey,
+      statuses: [
+        StoryStatus.InProgress,
+        StoryStatus.Review,
+        StoryStatus.InProgress,
+        StoryStatus.InProgress,
+        StoryStatus.Review,
+        StoryStatus.Done,
+      ],
+    });
+
+    const { runner, getRunCount } = makeRunnerSequence([
+      okResult("dev-0"),
+      okResult("review-0"),
+      okResult("dev-1"),
+      okResult("review-1"),
+    ]);
+
+    const { store: runState, getIncrementCalls, recordWorkflowCalls } = makeRunStateStore();
+
+    const logger = new StubLogger();
+    const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
+
+    const result = await processor.processStory(storyKey, 1, 3);
+
+    expect(result.success).toBe(true);
+    expect(result.retries).toBe(1);
+    expect(getReadCount()).toBe(6);
+    expect(getRunCount()).toBe(4);
+    expect(getIncrementCalls()).toBe(1);
+    expect(updateCalls).toHaveLength(0);
+    expect(recordWorkflowCalls).toEqual([
+      { storyKey, workflow: WorkflowType.DevStory },
+      { storyKey, workflow: WorkflowType.CodeReview },
+      { storyKey, workflow: WorkflowType.DevStory },
+      { storyKey, workflow: WorkflowType.CodeReview },
+    ]);
+  });
+
+  test("invalid transition logs warning but still proceeds", async () => {
+    const { repo } = makeStateRepoSequence({
+      storyKey,
+      statuses: [StoryStatus.Done, StoryStatus.Done],
+    });
+
+    const { runner } = makeRunnerSequence([okResult("review")]);
+    const { store: runState } = makeRunStateStore();
+
+    const logger = new StubLogger();
+    const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
+
+    const result = await processor.processStory(storyKey, 1, 3);
+
+    expect(result.success).toBe(true);
+    expect(logger.entries).toContainEqual({
+      level: "warn",
+      message: "Invalid status transition detected",
+      data: {
+        event: "invalid-status-transition",
+        storyKey,
+        fromStatus: StoryStatus.Done,
+        toStatus: StoryStatus.Review,
+      },
+    });
+  });
+
 });
