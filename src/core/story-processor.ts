@@ -244,7 +244,7 @@ export class StoryProcessor {
       } catch (e) {
         this.logger.warn("Failed to stop summarizer", {
           event: "summarizer-stop-failed",
-          error: (e as Error).message,
+          error: e instanceof Error ? e.message : String(e),
         });
       }
     }

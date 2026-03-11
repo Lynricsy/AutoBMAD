@@ -369,7 +369,6 @@ describe("Integration: Resume Scenarios", () => {
   // Scenarios 4-6 use real file I/O with temp directories
 
   const story1 = "0-1-story-alpha";
-  const _story2 = "0-2-story-beta";
 
   // ── Scenario 1: StoryCompleteError blindness ──────────────────────────────
 
