@@ -191,15 +191,20 @@ export class StoryProcessor {
 
     if (this.config.summary) {
       try {
+        this.logger.debug("Creating ActivitySummarizer", { provider: this.config.summary.provider, model: this.config.summary.model });
         summarizer = this.createSummarizer(
           this.config.summary,
           this.config.projectDir,
           renderActivitySummary,
         );
         await summarizer.start();
-      } catch (_e) {
+        this.logger.debug("ActivitySummarizer started OK");
+      } catch (err) {
+        this.logger.warn("Failed to start ActivitySummarizer — continuing without summary", { error: String(err) });
         summarizer = undefined;
       }
+    } else {
+      this.logger.debug("No summary config — skipping ActivitySummarizer");
     }
 
     let result: RunResult;

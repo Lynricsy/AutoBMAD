@@ -59,13 +59,15 @@ function inferProviderId(entry: OpenCodeProviderEntry): string | undefined {
 export function stripJsonComments(text: string): string {
   const jsoncPattern = /"(?:\\.|[^"\\])*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g;
 
-  return text.replace(jsoncPattern, (match) => {
+  const withoutComments = text.replace(jsoncPattern, (match) => {
     if (match.startsWith('"')) {
       return match;
     }
 
     return "";
   });
+
+  return withoutComments.replace(/,(\s*[}\]])/g, "$1");
 }
 
 export function readOpenCodeConfig(configPath?: string): object {
