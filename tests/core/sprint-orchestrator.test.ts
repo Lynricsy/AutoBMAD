@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 
 import { SprintOrchestrator } from "../../src/core/sprint-orchestrator.js";
 import {
@@ -553,5 +553,61 @@ describe("SprintOrchestrator", () => {
     expect(result.completed).toBe(0);
     expect(callHistory).toHaveLength(0);
     expect(updateCalls).toEqual([{ storyKey: story1, status: StoryStatus.Done }]);
+  });
+
+  test("SIGINT handler calls console.error when flush save fails", async () => {
+    const { repo } = makeInMemoryStateRepo([
+      { storyKey: "0-1-sig", status: StoryStatus.Backlog },
+    ]);
+
+    const { store: runState } = makeRunStateStore();
+
+    const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    let resolveRun!: (value: RunResult) => void;
+    const runner: IWorkflowRunner = {
+      async run(): Promise<RunResult> {
+        return new Promise<RunResult>((resolve) => {
+          resolveRun = resolve;
+        });
+      },
+    };
+
+    const orchestrator = new SprintOrchestrator(
+      repo,
+      runner,
+      runState,
+      new StubLogger(),
+      makeConfig(),
+    );
+
+    const sprintPromise = orchestrator.runSprint();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    runState.save = async () => {
+      throw new Error("disk full");
+    };
+
+    const sigintHandlers = process.listeners("SIGINT");
+    const handler = sigintHandlers[sigintHandlers.length - 1] as (() => void) | undefined;
+    expect(handler).toBeDefined();
+    handler!();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[AutoBMAD] Failed to flush run state on interrupt:",
+      "disk full",
+    );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+
+    process.removeAllListeners("SIGINT");
+    resolveRun(okResult("cleanup"));
+    sprintPromise.catch(() => {});
   });
 });

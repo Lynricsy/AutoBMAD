@@ -217,7 +217,8 @@ export class RunStateStore implements IRunStateStore {
     } catch (err) {
       try {
         unlinkSync(tmpPath);
-      } catch {
+      } catch (cleanupErr) {
+        // temp file cleanup is best-effort — failure is non-critical
       }
       throw err;
     }

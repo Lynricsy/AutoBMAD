@@ -25,6 +25,7 @@ function makeRunState(overrides: Partial<RunState> = {}): RunState {
     startedAt: now,
     lastUpdatedAt: now,
     completedStories: [],
+    completedWorkflows: {},
     currentSprint: 1,
     ...overrides,
   };
@@ -60,6 +61,9 @@ function makeRunStateStore(initial: RunState) {
     setError: () => {},
     clearStory: () => {},
     markComplete: () => {},
+    recordWorkflow: async () => {},
+    getCompletedWorkflows: () => [],
+    hasCompletedWorkflow: () => false,
     setCurrentSprint,
     reset,
   };

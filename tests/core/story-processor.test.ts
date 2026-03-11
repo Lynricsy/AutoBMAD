@@ -17,6 +17,7 @@ import {
 } from "../../src/core/types.js";
 import { MaxRetriesExceededError, WorkflowHaltError } from "../../src/core/errors.js";
 import { Logger, LogLevel } from "../../src/core/logger.js";
+import { ActivitySummarizer } from "../../src/core/activity-summarizer.js";
 
 class StubLogger extends Logger {
   readonly entries: Array<{
@@ -578,7 +579,7 @@ describe("StoryProcessor", () => {
     const logger = new StubLogger();
     const processor = new StoryProcessor(repo, runner, runState, logger, makeConfig());
 
-    await expect(processor.processStory(storyKey, 1, 3)).rejects.toBeInstanceOf(WorkflowHaltError);
+    expect(processor.processStory(storyKey, 1, 3)).rejects.toBeInstanceOf(WorkflowHaltError);
 
     expect(updateCalls).toEqual([
       { storyKey, status: StoryStatus.NeedsHumanIntervention },
@@ -658,6 +659,65 @@ describe("StoryProcessor", () => {
         storyKey,
         fromStatus: StoryStatus.Done,
         toStatus: StoryStatus.Review,
+      },
+    });
+  });
+
+  test("summarizer.stop() failure logs warning with summarizer-stop-failed event", async () => {
+    class TestableStoryProcessor extends StoryProcessor {
+      protected createSummarizer(): ActivitySummarizer {
+        return {
+          start: async () => {},
+          stop: () => {
+            throw new Error("summarizer exploded");
+          },
+          handleStderrChunk: () => {},
+        } as unknown as ActivitySummarizer;
+      }
+    }
+
+    const { repo } = makeStateRepoSequence({
+      storyKey,
+      statuses: [
+        StoryStatus.Backlog,
+        StoryStatus.ReadyForDev,
+        StoryStatus.Review,
+        StoryStatus.Done,
+      ],
+    });
+
+    const results = [okResult("create"), okResult("dev"), okResult("review")];
+    let runIdx = 0;
+    const runner: IWorkflowRunner = {
+      async run(): Promise<RunResult> {
+        if (runIdx >= results.length) {
+          throw new Error(`runner.run called too many times`);
+        }
+        const result = results[runIdx]!;
+        runIdx += 1;
+        return result;
+      },
+    };
+    const { store: runState } = makeRunStateStore();
+
+    const logger = new StubLogger();
+    const processor = new TestableStoryProcessor(
+      repo,
+      runner,
+      runState,
+      logger,
+      makeConfig({ summary: { provider: "test", model: "test" } }),
+    );
+
+    const result = await processor.processStory(storyKey, 1, 3);
+
+    expect(result.success).toBe(true);
+    expect(logger.entries).toContainEqual({
+      level: "warn",
+      message: "Failed to stop summarizer",
+      data: {
+        event: "summarizer-stop-failed",
+        error: "summarizer exploded",
       },
     });
   });
