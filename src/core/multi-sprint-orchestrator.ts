@@ -77,8 +77,35 @@ export class MultiSprintOrchestrator {
       }
 
       if (result.status === "failed") {
+        const failedState = await this.runState.load();
+        const preservedErrors = [...failedState.errors];
+
+        if (result.totalStories > 0) {
+          try {
+            await this.archiver.archive(currentSprint);
+          } catch (error) {
+            this.logger.warn("Failed to archive failed sprint before reset", {
+              event: "failed-sprint-archive-failed",
+              sprint: currentSprint,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        this.logger.warn("Sprint failed, resetting state", {
+          event: "sprint-failed-reset",
+          sprint: currentSprint,
+        });
         this.logger.warn(`Sprint ${currentSprint} failed, skipping to next`);
-        currentSprint += 1;
+
+        const nextSprint = currentSprint + 1;
+        await this.runState.reset();
+        const resetState = await this.runState.load();
+        resetState.errors = preservedErrors;
+        resetState.currentSprint = nextSprint;
+        this.runState.setCurrentSprint(nextSprint);
+        await this.runState.save(resetState);
+        currentSprint = nextSprint;
         continue;
       }
 

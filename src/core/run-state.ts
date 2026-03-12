@@ -1,6 +1,7 @@
 import { renameSync, writeFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { StateCorruptionError } from "./errors.js";
+import { LogLevel, Logger } from "./logger.js";
 import {
   WorkflowType,
   type ErrorInfo,
@@ -16,12 +17,13 @@ function createDefaultRunState(now: Date = new Date()): RunState {
     startedAt: now,
     lastUpdatedAt: now,
     completedStories: [],
+    completedWorkflows: {},
     currentSprint: 1,
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseDate(value: unknown, filePath: string, field: string): Date {
@@ -47,7 +49,7 @@ function isWorkflowType(value: unknown): value is WorkflowType {
 }
 
 function hydrateErrorInfo(value: unknown, filePath: string): ErrorInfo {
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     throw new StateCorruptionError(filePath, "Invalid errors entry: expected object");
   }
 
@@ -71,8 +73,12 @@ function hydrateErrorInfo(value: unknown, filePath: string): ErrorInfo {
   return error;
 }
 
-function hydrateRunState(value: unknown, filePath: string): RunState {
-  if (!isRecord(value)) {
+function hydrateRunState(
+  value: unknown,
+  filePath: string,
+  logger: Pick<Logger, "info">,
+): RunState {
+  if (!isPlainObject(value)) {
     throw new StateCorruptionError(filePath, "Invalid state: expected object");
   }
 
@@ -83,7 +89,7 @@ function hydrateRunState(value: unknown, filePath: string): RunState {
   const currentStory: string | null = currentStoryRaw;
 
   const retriesRaw = value.retries;
-  if (!isRecord(retriesRaw)) {
+  if (!isPlainObject(retriesRaw)) {
     throw new StateCorruptionError(filePath, "Invalid retries: expected object");
   }
   const retries: Record<string, number> = {};
@@ -106,6 +112,29 @@ function hydrateRunState(value: unknown, filePath: string): RunState {
   }
   const completedStories = completedRaw;
 
+  let completedWorkflows: Record<string, WorkflowType[]> = {};
+  if (Object.prototype.hasOwnProperty.call(value, "completedWorkflows")) {
+    const completedWorkflowsRaw = value.completedWorkflows;
+    if (!isPlainObject(completedWorkflowsRaw)) {
+      throw new StateCorruptionError(filePath, "Invalid completedWorkflows: expected object");
+    }
+
+    for (const [storyKey, workflows] of Object.entries(completedWorkflowsRaw)) {
+      if (!Array.isArray(workflows) || workflows.some((workflow) => !isWorkflowType(workflow))) {
+        throw new StateCorruptionError(
+          filePath,
+          `Invalid completedWorkflows.${storyKey}: expected WorkflowType[]`,
+        );
+      }
+      completedWorkflows[storyKey] = [...workflows];
+    }
+  } else {
+    logger.info("Migrating state: adding completedWorkflows", {
+      event: "state-migration",
+      field: "completedWorkflows",
+    });
+  }
+
   const startedAt = parseDate(value.startedAt, filePath, "startedAt");
   const lastUpdatedAt = parseDate(value.lastUpdatedAt, filePath, "lastUpdatedAt");
 
@@ -120,16 +149,25 @@ function hydrateRunState(value: unknown, filePath: string): RunState {
     startedAt,
     lastUpdatedAt,
     completedStories,
+    completedWorkflows,
     currentSprint,
   };
 }
 
 export class RunStateStore implements IRunStateStore {
   private readonly statePath: string;
+  private readonly logger: Pick<Logger, "info" | "warn">;
   private state: RunState;
 
-  constructor(statePath: string = join(process.cwd(), ".autobmad-state.json")) {
+  constructor(
+    statePath: string = join(process.cwd(), ".autobmad-state.json"),
+    logger: Pick<Logger, "info" | "warn"> = new Logger("run-state", {
+      level: LogLevel.Info,
+      logDir: join(dirname(statePath), ".autobmad-logs"),
+    }),
+  ) {
     this.statePath = statePath;
+    this.logger = logger;
     this.state = createDefaultRunState();
   }
 
@@ -148,10 +186,20 @@ export class RunStateStore implements IRunStateStore {
       parsed = JSON.parse(text) as unknown;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      throw new StateCorruptionError(this.statePath, `Invalid JSON: ${message}`);
+      const backupPath = `${this.statePath}.corrupt.${Date.now()}`;
+      writeFileSync(backupPath, text, "utf-8");
+      this.logger.warn("Recovered corrupt state file", {
+        event: "corrupt-state-recovery",
+        backupPath,
+        filePath: this.statePath,
+        error: message,
+      });
+      this.state = createDefaultRunState();
+      await this.save(this.state);
+      return this.state;
     }
 
-    this.state = hydrateRunState(parsed, this.statePath);
+    this.state = hydrateRunState(parsed, this.statePath, this.logger);
     return this.state;
   }
 
@@ -169,7 +217,8 @@ export class RunStateStore implements IRunStateStore {
     } catch (err) {
       try {
         unlinkSync(tmpPath);
-      } catch {
+      } catch (cleanupErr) {
+        // temp file cleanup is best-effort — failure is non-critical
       }
       throw err;
     }
@@ -185,6 +234,23 @@ export class RunStateStore implements IRunStateStore {
     const current = this.state.retries[storyKey] ?? 0;
     this.state.retries[storyKey] = current + 1;
     void this.save(this.state);
+  }
+
+  recordWorkflow(storyKey: string, workflow: WorkflowType): void {
+    const completed = this.state.completedWorkflows[storyKey] ?? [];
+    if (!completed.includes(workflow)) {
+      completed.push(workflow);
+      this.state.completedWorkflows[storyKey] = completed;
+    }
+    void this.save(this.state);
+  }
+
+  getCompletedWorkflows(storyKey: string): WorkflowType[] {
+    return [...(this.state.completedWorkflows[storyKey] ?? [])];
+  }
+
+  hasCompletedWorkflow(storyKey: string, workflow: WorkflowType): boolean {
+    return this.getCompletedWorkflows(storyKey).includes(workflow);
   }
 
   setError(error: ErrorInfo): void {

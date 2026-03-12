@@ -1,6 +1,9 @@
 import type { SummaryConfig } from "./types.js";
 import { LLMClient } from "./llm-client.js";
 import { EventStreamReader } from "./event-stream-reader.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("summarizer");
 
 export async function getGitDiff(dir: string): Promise<string> {
   try {
@@ -46,9 +49,11 @@ export class ActivitySummarizer {
   }
 
   async start(): Promise<void> {
+    log.debug("Initializing LLM client and starting summary timer", { intervalMs: this.intervalMs });
     this.llmClient.initialize();
     this.stopped = false;
     this.scheduleNext();
+    log.debug("ActivitySummarizer started successfully");
   }
 
   stop(): void {
@@ -77,16 +82,21 @@ export class ActivitySummarizer {
 
     try {
       const events = this.streamReader.drain();
+      log.debug("runSummary triggered", { eventCount: events.length, stopped: this.stopped });
       if (events.length === 0) {
+        log.debug("No stderr events accumulated, skipping summary");
         return;
       }
 
       const gitDiff = await this.gitDiffFn(this.projectDir);
       const truncatedEvents = truncate(events.join("\n"), 10000);
       const truncatedDiff = truncate(gitDiff, 10000);
+      log.debug("Calling LLM for summary", { eventsChars: truncatedEvents.length, diffChars: truncatedDiff.length });
       const summary = await this.llmClient.generateSummary([truncatedEvents], truncatedDiff);
+      log.debug("LLM summary received", { summaryLength: summary.length });
       this.renderFn(summary);
-    } catch (_e) {
+    } catch (err) {
+      log.warn("runSummary failed silently", { error: String(err) });
     } finally {
       this.isSummarizing = false;
       this.scheduleNext();

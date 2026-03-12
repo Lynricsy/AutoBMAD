@@ -1,9 +1,10 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 
 import { SprintOrchestrator } from "../../src/core/sprint-orchestrator.js";
 import {
   AgentType,
   StoryStatus,
+  WorkflowType,
   type AutoBMADConfig,
   type ErrorInfo,
   type IRunStateStore,
@@ -17,6 +18,10 @@ import {
 import { Logger, LogLevel } from "../../src/core/logger.js";
 
 class StubLogger extends Logger {
+  readonly infos: Array<{ message: string; data?: Record<string, unknown> }> = [];
+  readonly warns: Array<{ message: string; data?: Record<string, unknown> }> = [];
+  readonly errors: Array<{ message: string; data?: Record<string, unknown> }> = [];
+
   constructor() {
     super("sprint-orchestrator-test", {
       level: LogLevel.Debug,
@@ -26,9 +31,19 @@ class StubLogger extends Logger {
   }
 
   debug(_message: string, _data?: Record<string, unknown>): void {}
-  info(_message: string, _data?: Record<string, unknown>): void {}
-  warn(_message: string, _data?: Record<string, unknown>): void {}
-  error(_message: string, _data?: Record<string, unknown>): void {}
+
+  info(message: string, data?: Record<string, unknown>): void {
+    this.infos.push({ message, data });
+  }
+
+  warn(message: string, data?: Record<string, unknown>): void {
+    this.warns.push({ message, data });
+  }
+
+  error(message: string, data?: Record<string, unknown>): void {
+    this.errors.push({ message, data });
+  }
+
   fatal(_message: string, _data?: Record<string, unknown>): void {}
 }
 
@@ -145,6 +160,8 @@ function makeRunStateStore(initial?: Partial<RunState>) {
     startedAt: now,
     lastUpdatedAt: now,
     completedStories: [],
+    completedWorkflows: {},
+    currentSprint: 1,
     ...initial,
   };
 
@@ -169,6 +186,21 @@ function makeRunStateStore(initial?: Partial<RunState>) {
       state.retries[storyKey] = current + 1;
     },
 
+    recordWorkflow(storyKey: string, workflow: WorkflowType): void {
+      const completed = state.completedWorkflows[storyKey] ?? [];
+      if (!completed.includes(workflow)) {
+        state.completedWorkflows[storyKey] = [...completed, workflow];
+      }
+    },
+
+    getCompletedWorkflows(storyKey: string): WorkflowType[] {
+      return [...(state.completedWorkflows[storyKey] ?? [])];
+    },
+
+    hasCompletedWorkflow(storyKey: string, workflow: WorkflowType): boolean {
+      return (state.completedWorkflows[storyKey] ?? []).includes(workflow);
+    },
+
     setError(error: ErrorInfo): void {
       state.errors.push(error);
     },
@@ -185,6 +217,10 @@ function makeRunStateStore(initial?: Partial<RunState>) {
       state.currentStory = null;
     },
 
+    setCurrentSprint(sprint: number): void {
+      state.currentSprint = sprint;
+    },
+
     async reset(): Promise<void> {
       const now2 = new Date();
       state = {
@@ -194,6 +230,8 @@ function makeRunStateStore(initial?: Partial<RunState>) {
         startedAt: now2,
         lastUpdatedAt: now2,
         completedStories: [],
+        completedWorkflows: {},
+        currentSprint: 1,
       };
     },
   };
@@ -327,6 +365,9 @@ describe("SprintOrchestrator", () => {
     const { store: runState } = makeRunStateStore({
       currentStory: story2,
       completedStories: [story1],
+      completedWorkflows: {
+        [story1]: [WorkflowType.CodeReview],
+      },
     });
 
     const { runner, callHistory } = makeDynamicRunner({
@@ -440,5 +481,133 @@ describe("SprintOrchestrator", () => {
 
     expect(callHistory.some((c) => c.message.includes(story3))).toBe(false);
     expect(callHistory.map((c) => c.agent).includes(AgentType.Hephaestus)).toBe(true);
+  });
+
+  test("Blind skip is prevented when completedStories entry is missing code-review workflow", async () => {
+    const { repo, setStatus, updateCalls } = makeInMemoryStateRepo([
+      { storyKey: story1, status: StoryStatus.Review },
+    ]);
+
+    const { store: runState } = makeRunStateStore({
+      completedStories: [story1],
+      completedWorkflows: {},
+    });
+
+    const { runner, callHistory } = makeDynamicRunner({
+      storyKeys: [story1],
+      setStatus,
+    });
+
+    const logger = new StubLogger();
+    const orchestrator = new SprintOrchestrator(
+      repo,
+      runner,
+      runState,
+      logger,
+      makeConfig({ maxRetries: 1 }),
+    );
+
+    const result = await orchestrator.runSprint();
+
+    expect(result.status).toBe("complete");
+    expect(result.completed).toBe(1);
+    expect(callHistory).toHaveLength(1);
+    expect(callHistory[0]?.message).toContain(story1);
+    expect(callHistory[0]?.message).toContain("code-review");
+    expect(updateCalls).toEqual([]);
+    expect(
+      logger.warns.some((entry) =>
+        entry.message.includes("story in completedStories but missing code-review workflow"),
+      ),
+    ).toBe(true);
+  });
+
+  test("Blind skip remains allowed when code-review workflow is already completed", async () => {
+    const { repo, setStatus, updateCalls } = makeInMemoryStateRepo([
+      { storyKey: story1, status: StoryStatus.Review },
+    ]);
+
+    const { store: runState } = makeRunStateStore({
+      completedStories: [story1],
+      completedWorkflows: {
+        [story1]: [WorkflowType.CodeReview],
+      },
+    });
+
+    const { runner, callHistory } = makeDynamicRunner({
+      storyKeys: [story1],
+      setStatus,
+    });
+
+    const orchestrator = new SprintOrchestrator(
+      repo,
+      runner,
+      runState,
+      new StubLogger(),
+      makeConfig({ maxRetries: 1 }),
+    );
+
+    const result = await orchestrator.runSprint();
+
+    expect(result.status).toBe("complete");
+    expect(result.completed).toBe(0);
+    expect(callHistory).toHaveLength(0);
+    expect(updateCalls).toEqual([{ storyKey: story1, status: StoryStatus.Done }]);
+  });
+
+  test("SIGINT handler calls logger.error when flush save fails", async () => {
+    const { repo } = makeInMemoryStateRepo([
+      { storyKey: "0-1-sig", status: StoryStatus.Backlog },
+    ]);
+
+    const { store: runState } = makeRunStateStore();
+
+    const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    let resolveRun!: (value: RunResult) => void;
+    const runner: IWorkflowRunner = {
+      async run(): Promise<RunResult> {
+        return new Promise<RunResult>((resolve) => {
+          resolveRun = resolve;
+        });
+      },
+    };
+
+    const logger = new StubLogger();
+
+    const orchestrator = new SprintOrchestrator(
+      repo,
+      runner,
+      runState,
+      logger,
+      makeConfig(),
+    );
+
+    const sprintPromise = orchestrator.runSprint();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    runState.save = async () => {
+      throw new Error("disk full");
+    };
+
+    const sigintHandlers = process.listeners("SIGINT");
+    const handler = sigintHandlers[sigintHandlers.length - 1] as (() => void) | undefined;
+    expect(handler).toBeDefined();
+    handler!();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(logger.errors).toContainEqual({
+      message: "Failed to flush run state on interrupt",
+      data: { event: "sigint-flush-failed", error: "disk full" },
+    });
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    exitSpy.mockRestore();
+
+    process.removeAllListeners("SIGINT");
+    resolveRun(okResult("cleanup"));
+    sprintPromise.catch(() => {});
   });
 });

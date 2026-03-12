@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RunStateStore } from "../../src/core/run-state.js";
@@ -27,6 +27,7 @@ describe("RunStateStore", () => {
     expect(state.retries).toEqual({});
     expect(state.errors).toEqual([]);
     expect(state.completedStories).toEqual([]);
+    expect(state.completedWorkflows).toEqual({});
     expect(state.startedAt).toBeInstanceOf(Date);
     expect(state.lastUpdatedAt).toBeInstanceOf(Date);
     expect(existsSync(statePath)).toBe(true);
@@ -45,6 +46,9 @@ describe("RunStateStore", () => {
       startedAt,
       lastUpdatedAt: oldLastUpdatedAt,
       completedStories: ["STORY-0"],
+      completedWorkflows: {
+        "STORY-0": [WorkflowType.CodeReview],
+      },
     };
 
     await store.save(toSave);
@@ -53,6 +57,9 @@ describe("RunStateStore", () => {
     expect(loaded.currentStory).toBe("STORY-1");
     expect(loaded.retries).toEqual({ "STORY-1": 2 });
     expect(loaded.completedStories).toEqual(["STORY-0"]);
+    expect(loaded.completedWorkflows).toEqual({
+      "STORY-0": [WorkflowType.CodeReview],
+    });
     expect(loaded.startedAt.toISOString()).toBe(startedAt.toISOString());
     expect(loaded.lastUpdatedAt.getTime()).toBeGreaterThan(oldLastUpdatedAt.getTime());
   });
@@ -79,6 +86,7 @@ describe("RunStateStore", () => {
       startedAt,
       lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
       completedStories: [],
+      completedWorkflows: {},
     };
 
     await store.save(toSave);
@@ -121,6 +129,34 @@ describe("RunStateStore", () => {
     expect(loaded.retries["STORY-1"]).toBe(3);
   });
 
+  test("recordWorkflow() tracks completed workflows and query helpers return expected values", async () => {
+    const store = new RunStateStore(statePath);
+    await store.load();
+
+    store.recordWorkflow("story-1", WorkflowType.CodeReview);
+
+    expect(store.hasCompletedWorkflow("story-1", WorkflowType.CodeReview)).toBe(true);
+    expect(store.getCompletedWorkflows("story-1")).toEqual([WorkflowType.CodeReview]);
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.completedWorkflows).toEqual({
+      "story-1": [WorkflowType.CodeReview],
+    });
+  });
+
+  test("recordWorkflow() deduplicates workflows per story", async () => {
+    const store = new RunStateStore(statePath);
+    await store.load();
+
+    store.recordWorkflow("story-1", WorkflowType.CodeReview);
+    store.recordWorkflow("story-1", WorkflowType.CodeReview);
+
+    expect(store.getCompletedWorkflows("story-1")).toEqual([WorkflowType.CodeReview]);
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.completedWorkflows["story-1"]).toEqual([WorkflowType.CodeReview]);
+  });
+
   test("setError() appends error info and persists", async () => {
     const store = new RunStateStore(statePath);
     await store.load();
@@ -158,6 +194,9 @@ describe("RunStateStore", () => {
       startedAt: new Date("2020-01-01T00:00:00.000Z"),
       lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
       completedStories: [],
+      completedWorkflows: {
+        "STORY-1": [WorkflowType.DevStory],
+      },
     });
 
     store.markComplete("STORY-1");
@@ -167,6 +206,9 @@ describe("RunStateStore", () => {
     expect(loaded.retries["STORY-1"]).toBeUndefined();
     expect(loaded.retries["STORY-2"]).toBe(1);
     expect(loaded.currentStory).toBeNull();
+    expect(loaded.completedWorkflows).toEqual({
+      "STORY-1": [WorkflowType.DevStory],
+    });
   });
 
   test("clearStory() sets currentStory to null", async () => {
@@ -180,6 +222,7 @@ describe("RunStateStore", () => {
       startedAt: new Date("2020-01-01T00:00:00.000Z"),
       lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
       completedStories: [],
+      completedWorkflows: {},
     });
 
     store.clearStory();
@@ -205,6 +248,9 @@ describe("RunStateStore", () => {
       startedAt: new Date("2020-01-01T00:00:00.000Z"),
       lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
       completedStories: ["STORY-0"],
+      completedWorkflows: {
+        "STORY-0": [WorkflowType.CodeReview],
+      },
     });
 
     await store.reset();
@@ -214,6 +260,7 @@ describe("RunStateStore", () => {
     expect(loaded.retries).toEqual({});
     expect(loaded.errors).toEqual([]);
     expect(loaded.completedStories).toEqual([]);
+    expect(loaded.completedWorkflows).toEqual({});
     expect(existsSync(statePath)).toBe(true);
   });
 
@@ -228,6 +275,7 @@ describe("RunStateStore", () => {
       startedAt: new Date("2020-01-01T00:00:00.000Z"),
       lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
       completedStories: [],
+      completedWorkflows: {},
     });
 
     expect(existsSync(`${statePath}.tmp`)).toBe(false);
@@ -250,6 +298,7 @@ describe("RunStateStore", () => {
       startedAt: new Date("2020-01-01T00:00:00.000Z"),
       lastUpdatedAt: new Date("2000-01-01T00:00:00.000Z"),
       completedStories: [],
+      completedWorkflows: {},
       currentSprint: 3,
     });
 
@@ -258,7 +307,6 @@ describe("RunStateStore", () => {
   });
 
   test("hydrateRunState() defaults currentSprint to 1 for old state files without it", async () => {
-    const { writeFileSync } = await import("node:fs");
     const oldState = {
       currentStory: null,
       retries: {},
@@ -273,8 +321,25 @@ describe("RunStateStore", () => {
     expect(loaded.currentSprint).toBe(1);
   });
 
+  test("hydrateRunState() migrates missing completedWorkflows to an empty object", async () => {
+    const oldState = {
+      currentStory: null,
+      retries: {},
+      errors: [],
+      startedAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+      lastUpdatedAt: new Date("2020-01-01T00:00:00.000Z").toISOString(),
+      completedStories: [],
+      currentSprint: 2,
+    };
+    writeFileSync(statePath, JSON.stringify(oldState, null, 2), "utf-8");
+
+    const loaded = await new RunStateStore(statePath).load();
+
+    expect(loaded.completedWorkflows).toEqual({});
+    expect(loaded.currentSprint).toBe(2);
+  });
+
   test("hydrateRunState() defaults currentSprint to 1 for invalid values", async () => {
-    const { writeFileSync } = await import("node:fs");
     const badState = {
       currentStory: null,
       retries: {},
@@ -288,6 +353,22 @@ describe("RunStateStore", () => {
 
     const loaded = await new RunStateStore(statePath).load();
     expect(loaded.currentSprint).toBe(1);
+  });
+
+  test("load() recovers from corrupt JSON by backing up the file and returning default state", async () => {
+    writeFileSync(statePath, '{"currentStory":', "utf-8");
+
+    const loaded = await new RunStateStore(statePath).load();
+    const files = readdirSync(tmpDir);
+    const corruptBackups = files.filter((file) => file.startsWith(".autobmad-state.json.corrupt."));
+
+    expect(loaded.currentStory).toBeNull();
+    expect(loaded.retries).toEqual({});
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.completedStories).toEqual([]);
+    expect(loaded.completedWorkflows).toEqual({});
+    expect(corruptBackups).toHaveLength(1);
+    expect(readFileSync(join(tmpDir, corruptBackups[0]!), "utf-8")).toBe('{"currentStory":');
   });
 
   test("setCurrentSprint() updates currentSprint and persists", async () => {
@@ -309,5 +390,20 @@ describe("RunStateStore", () => {
 
     const loaded = await new RunStateStore(statePath).load();
     expect(loaded.currentSprint).toBe(1);
+  });
+
+  test("reset() clears completed workflows", async () => {
+    const store = new RunStateStore(statePath);
+    await store.load();
+
+    store.recordWorkflow("story-1", WorkflowType.DevStory);
+    store.recordWorkflow("story-1", WorkflowType.CodeReview);
+
+    await store.reset();
+
+    expect(store.getCompletedWorkflows("story-1")).toEqual([]);
+
+    const loaded = await new RunStateStore(statePath).load();
+    expect(loaded.completedWorkflows).toEqual({});
   });
 });

@@ -10,6 +10,7 @@
         "@ai-sdk/openai": "^3.0.41",
         "@ai-sdk/openai-compatible": "^2.0.35",
         "ai": "^6.0.116",
+        "autobmad": "^0.4.1",
         "yaml": "^2.7.0",
       },
       "devDependencies": {
@@ -44,6 +45,8 @@
     "@vercel/oidc": ["@vercel/oidc@3.1.0", "", {}, "sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w=="],
 
     "ai": ["ai@6.0.116", "", { "dependencies": { "@ai-sdk/gateway": "3.0.66", "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.19", "@opentelemetry/api": "1.9.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-7yM+cTmyRLeNIXwt4Vj+mrrJgVQ9RMIW5WO0ydoLoYkewIvsMcvUmqS4j2RJTUXaF1HphwmSKUMQ/HypNRGOmA=="],
+
+    "autobmad": ["autobmad@0.4.1", "", { "dependencies": { "@ai-sdk/anthropic": "^3.0.58", "@ai-sdk/google": "^3.0.43", "@ai-sdk/openai": "^3.0.41", "@ai-sdk/openai-compatible": "^2.0.35", "ai": "^6.0.116", "yaml": "^2.7.0" }, "bin": { "autobmad": "dist/cli.js" } }, "sha512-2u8VmMpMOmutX+ktBJxiru/6BcaNnt1isGZADVfDYXSmU1bd0A+OKBOi4lSz4JbcmglgzqY4+UyWFnof72zPbA=="],
 
     "bun-types": ["bun-types@1.3.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg=="],
 

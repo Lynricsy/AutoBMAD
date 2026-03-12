@@ -57,7 +57,7 @@ describe("config summary parsing", () => {
 
     const config = await loadConfig(["bun", "script.ts", "--dir", tmpDir]);
 
-    expect(config.summary).toBeUndefined();
+    expect(config.summary).toBeNull();
   });
 
   test("parses all supported summary providers", async () => {

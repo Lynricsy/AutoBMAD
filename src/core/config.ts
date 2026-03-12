@@ -3,6 +3,9 @@ import { parse as parseYaml } from "yaml";
 import { existsSync } from "node:fs";
 import type { AutoBMADConfig, SummaryConfig } from "./types.js";
 import { resolveSmallModel } from "./llm-client.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("config");
 
 export const DEFAULT_CONFIG: AutoBMADConfig = {
   projectDir: process.cwd(),
@@ -110,6 +113,8 @@ async function loadYamlConfig(path: string): Promise<Partial<AutoBMADConfig>> {
         ...(typeof s.openCodeProviderName === "string" ? { openCodeProviderName: s.openCodeProviderName } : {}),
       };
       result.summary = summary;
+    } else {
+      result.summary = null;
     }
   }
 
@@ -159,9 +164,13 @@ export async function loadConfig(argv?: string[]): Promise<AutoBMADConfig> {
   };
 
   if (merged.summary === undefined) {
+    log.debug("Summary not configured, attempting auto-detection via OpenCode small_model");
     const autoConfig = resolveSmallModel();
     if (autoConfig) {
+      log.debug("Auto-detected summary config", { provider: autoConfig.provider, model: autoConfig.model, hasApiKey: !!autoConfig.apiKey, hasBaseURL: !!autoConfig.baseURL });
       merged.summary = autoConfig;
+    } else {
+      log.debug("Auto-detection returned null — no small_model found or provider unrecognized");
     }
   }
 

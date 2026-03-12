@@ -18,6 +18,7 @@ import {
 import { StoryProcessor } from "./story-processor.js";
 import { renderPrompt } from "./prompts.js";
 import { type Logger } from "./logger.js";
+import { reconcileStateOnResume } from "./state-reconciler.js";
 import {
   renderError,
   renderSprintBanner,
@@ -91,10 +92,41 @@ export class SprintOrchestrator {
       const completedStories = new Set(initialRunState.completedStories);
 
       let forcedStory: string | null = initialRunState.currentStory;
+      if (!forcedStory) {
+        await this.ensureSprintPlanned();
+      }
+
+      const shouldReconcileResumeState =
+        initialRunState.currentStory === null &&
+        (initialRunState.completedStories.length > 0 ||
+          Object.keys(initialRunState.completedWorkflows).length > 0 ||
+          Object.keys(initialRunState.retries).length > 0);
+
+      if (shouldReconcileResumeState) {
+        const reconciliation = await reconcileStateOnResume(
+          this.runState,
+          this.stateRepo,
+          this.logger,
+        );
+
+        this.logger.info("Resume reconciliation result", {
+          event: "resume-reconciliation-result",
+          downgradedStories: reconciliation.downgradedStories,
+          staleCurrentStory: reconciliation.staleCurrentStory,
+          inconsistencies: reconciliation.inconsistencies,
+        });
+
+        if (reconciliation.staleCurrentStory && forcedStory) {
+          forcedStory = null;
+          this.logger.warn("Ignoring stale currentStory during sprint resume", {
+            event: "stale-current-story-ignored",
+            storyKey: initialRunState.currentStory,
+          });
+        }
+      }
+
       if (forcedStory) {
         this.logger.info("resuming sprint", { storyKey: forcedStory });
-      } else {
-        await this.ensureSprintPlanned();
       }
 
       totalStories = (await this.stateRepo.getAllStories()).size;
@@ -111,9 +143,24 @@ export class SprintOrchestrator {
         if (!storyKey) break;
 
         if (completedStories.has(storyKey)) {
-          await this.stateRepo.updateStatus(storyKey, StoryStatus.Done);
-          this.runState.clearStory();
-          continue;
+          const hasCodeReview = this.runState.hasCompletedWorkflow(
+            storyKey,
+            WorkflowType.CodeReview,
+          );
+
+          if (hasCodeReview) {
+            await this.stateRepo.updateStatus(storyKey, StoryStatus.Done);
+            this.runState.clearStory();
+            continue;
+          }
+
+          completedStories.delete(storyKey);
+          storyIndex = Math.min(storyIndex, completedStories.size);
+
+          this.logger.warn("story in completedStories but missing code-review workflow", {
+            event: "blind-skip-prevented",
+            storyKey,
+          });
         }
 
         await this.saveCurrentStory(storyKey);
@@ -310,7 +357,11 @@ export class SprintOrchestrator {
     try {
       const state = await this.runState.load();
       await this.runState.save(state);
-    } catch {
+    } catch (e) {
+      this.logger.error("Failed to flush run state on interrupt", {
+        event: "sigint-flush-failed",
+        error: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       process.exit(1);
     }

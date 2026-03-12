@@ -226,9 +226,9 @@ describe("resolveSmallModel", () => {
     expect(resolveSmallModel(openCodeConfig)).toBeNull();
   });
 
-  test("returns null for null/undefined input", () => {
-    expect(resolveSmallModel(null)).toBeNull();
-    expect(resolveSmallModel(undefined)).toBeNull();
+  test("returns null for empty config input", () => {
+    expect(resolveSmallModel({})).toBeNull();
+    expect(resolveSmallModel({ provider: {} })).toBeNull();
   });
 
   test("returns null when provider has no recognizable id or npm", () => {

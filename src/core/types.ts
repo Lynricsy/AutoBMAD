@@ -145,6 +145,7 @@ export interface RunState {
   startedAt: Date;
   lastUpdatedAt: Date;
   completedStories: string[];
+  completedWorkflows: Record<string, WorkflowType[]>;
   currentSprint?: number;
 }
 
@@ -168,6 +169,9 @@ export interface IRunStateStore {
   save(state: RunState): Promise<void>;
   getRetryCount(storyKey: string): number;
   incrementRetry(storyKey: string): void;
+  recordWorkflow(storyKey: string, workflow: WorkflowType): void;
+  getCompletedWorkflows(storyKey: string): WorkflowType[];
+  hasCompletedWorkflow(storyKey: string, workflow: WorkflowType): boolean;
   setError(error: ErrorInfo): void;
   clearStory(): void;
   markComplete(storyKey: string): void;
