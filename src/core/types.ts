@@ -8,6 +8,46 @@ export enum StoryStatus {
   NeedsHumanIntervention = "needs-human-intervention",
 }
 
+// 状态别名映射：处理 LLM 可能产生的非标准状态名
+const STATUS_ALIASES: Record<string, StoryStatus> = {
+  ready: StoryStatus.ReadyForDev,
+  ready_for_dev: StoryStatus.ReadyForDev,
+  readyfordev: StoryStatus.ReadyForDev,
+  in_progress: StoryStatus.InProgress,
+  inprogress: StoryStatus.InProgress,
+  wip: StoryStatus.InProgress,
+  needs_human_intervention: StoryStatus.NeedsHumanIntervention,
+  "human-intervention": StoryStatus.NeedsHumanIntervention,
+  blocked: StoryStatus.NeedsHumanIntervention,
+};
+
+const VALID_STORY_STATUSES = new Set<string>(Object.values(StoryStatus));
+
+/**
+ * 将原始状态字符串规范化为 StoryStatus 枚举值。
+ * 支持精确匹配、别名映射、下划线→连字符转换。
+ * 返回 null 表示无法识别。
+ */
+export function normalizeStoryStatus(raw: string): StoryStatus | null {
+  const normalized = raw.trim().toLowerCase();
+
+  if (VALID_STORY_STATUSES.has(normalized)) {
+    return normalized as StoryStatus;
+  }
+
+  const alias = STATUS_ALIASES[normalized];
+  if (alias) {
+    return alias;
+  }
+
+  const hyphenated = normalized.replace(/_/g, "-");
+  if (VALID_STORY_STATUSES.has(hyphenated)) {
+    return hyphenated as StoryStatus;
+  }
+
+  return null;
+}
+
 // 核心枚举：Epic 状态
 export enum EpicStatus {
   Backlog = "backlog",

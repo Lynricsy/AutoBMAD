@@ -1,6 +1,7 @@
 import {
   type LifecycleStep,
   StoryStatus,
+  normalizeStoryStatus,
   WorkflowType,
   type AutoBMADConfig,
   type IRunStateStore,
@@ -29,10 +30,14 @@ import type { StepDisplay } from "../cli/dashboard.js";
 const STORY_STATUS_SET = new Set<string>(Object.values(StoryStatus));
 
 function parseStoryStatus(raw: string, storyKey: string): StoryStatus {
-  if (!STORY_STATUS_SET.has(raw)) {
+  const normalized = normalizeStoryStatus(raw);
+  if (normalized === null) {
     throw new Error(`Invalid story status for ${storyKey}: ${raw}`);
   }
-  return raw as StoryStatus;
+  if (normalized !== raw) {
+    console.warn(`[AutoBMAD] Fuzzy-matched story status "${raw}" → "${normalized}" for ${storyKey}`);
+  }
+  return normalized;
 }
 
 function normalizeCustomPrompts(

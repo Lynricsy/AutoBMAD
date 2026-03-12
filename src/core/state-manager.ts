@@ -1,6 +1,6 @@
 import { parseDocument } from "yaml";
 import { renameSync, writeFileSync } from "node:fs";
-import { type IStateRepository, type SprintStatusData, StoryStatus } from "./types.js";
+import { type IStateRepository, type SprintStatusData, StoryStatus, normalizeStoryStatus } from "./types.js";
 import { StateCorruptionError } from "./errors.js";
 
 const STORY_KEY_RE = /^\d+-\d+[a-zA-Z]*-/;
@@ -53,10 +53,14 @@ function parseSprintStatusData(value: unknown, filePath: string): SprintStatusDa
 const STORY_STATUS_SET = new Set<string>(Object.values(StoryStatus));
 
 function parseStoryStatus(value: string, storyKey: string, filePath: string): StoryStatus {
-  if (!STORY_STATUS_SET.has(value)) {
+  const normalized = normalizeStoryStatus(value);
+  if (normalized === null) {
     throw new StateCorruptionError(filePath, `invalid story status for ${storyKey}: ${value}`);
   }
-  return value as StoryStatus;
+  if (normalized !== value) {
+    console.warn(`[AutoBMAD] Fuzzy-matched story status "${value}" → "${normalized}" for ${storyKey}`);
+  }
+  return normalized;
 }
 
 function isStoryKey(key: string): boolean {
